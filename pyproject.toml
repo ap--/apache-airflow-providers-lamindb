@@ -1,0 +1,42 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "lamin-airflow"
+version = "0.1.0"
+description = "Apache Airflow 3 provider to map DAG runs to LaminDB flows and tasks to steps."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "Apache-2.0" }
+keywords = ["airflow", "airflow-provider", "lamindb", "lamin"]
+classifiers = [
+    "Framework :: Apache Airflow",
+    "Framework :: Apache Airflow :: Provider",
+]
+
+dependencies = [
+    "apache-airflow>=3.0",
+    "lamindb",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "pytest-cov>=4.0",
+    "ruff>=0.8",
+]
+kubernetes = [
+    "apache-airflow-providers-cncf-kubernetes",
+]
+
+[project.entry-points."apache_airflow_provider"]
+provider_info = "lamin_airflow.get_provider_info:get_provider_info"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["lamin_airflow*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
