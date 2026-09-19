@@ -1,276 +1,186 @@
-"""Unit tests for LaminDB-Airflow operators with mocked lamindb."""
+"""Unit tests with lamindb mocked. See test_lamin_integration.py for the real thing."""
 
 from __future__ import annotations
 
+import sys
 from unittest.mock import MagicMock, patch
 
 import pytest
 
 pytest.importorskip("lamindb")
 
-from airflow.exceptions import AirflowException
-from lamin_airflow.operators.lamin_flow import LaminFlowInitOperator
-from lamin_airflow.operators.lamin_step import LaminStepOperator
+from airflow.exceptions import AirflowException  # noqa: E402
+
+from lamin_airflow.operators.lamin_flow import LaminFlowFinishOperator, LaminFlowInitOperator  # noqa: E402
+from lamin_airflow.operators.lamin_step import LaminStepOperator  # noqa: E402
+from lamin_airflow.utils.context import (  # noqa: E402
+    build_remote_step_source,
+    flow_run_context,
+    flow_run_reference,
+    is_lamin_tracked,
+)
 
 
-def test_lamin_flow_init_operator_execute() -> None:
-    """LaminFlowInitOperator creates flow run and pushes uid to XCom."""
-    op = LaminFlowInitOperator(task_id="flow_init")
-    ctx = {
-        "dag": MagicMock(dag_id="my_dag"),
-        "dag_run": MagicMock(
-            run_id="run_123",
-            conf={"key": "val"},
-            execution_date=None,
-            data_interval_start=None,
-            data_interval_end=None,
-        ),
-        "ti": MagicMock(),
+def make_context(run_id: str = "run_1", task_id: str = "t", task_states: dict | None = None) -> dict:
+    ti = MagicMock()
+    ti.get_task_states = MagicMock(return_value={run_id: task_states or {}})
+    return {
+        "dag": MagicMock(dag_id="my_dag", fileloc="/dags/my_dag.py"),
+        "dag_run": MagicMock(run_id=run_id, conf={}),
+        "run_id": run_id,
+        "ti": ti,
     }
 
-    with patch(
-        "lamin_airflow.operators.lamin_flow.create_flow_run",
-        return_value="flow_uid_abc123",
-    ) as m_create:
-        result = op.execute(ctx)
 
-    assert result == "flow_uid_abc123"
-    m_create.assert_called_once()
-    call_kw = m_create.call_args[1]
-    assert call_kw["dag_id"] == "my_dag"
-    assert call_kw["dag_run_id"] == "run_123"
-    assert "dag_id" in call_kw["params"]
-    assert call_kw["params"]["conf"] == {"key": "val"}
-
-    ctx["ti"].xcom_push.assert_called_once_with(key="return_value", value="flow_uid_abc123")
+def test_flow_run_reference_includes_dag_id() -> None:
+    assert flow_run_reference("my_dag", "scheduled__1") == "my_dag/scheduled__1"
 
 
-def test_lamin_flow_init_operator_no_dag_raises() -> None:
-    """LaminFlowInitOperator raises when DAG not in context."""
-    op = LaminFlowInitOperator(task_id="flow_init")
-    ctx = {"dag_run": MagicMock(run_id="r1"), "ti": MagicMock()}
-
-    with pytest.raises(AirflowException, match="DAG not available"):
-        op.execute(ctx)
+def test_flow_init_returns_uid_and_starts_run() -> None:
+    op = LaminFlowInitOperator()
+    with patch("lamin_airflow.operators.lamin_flow.start_flow_run", return_value=MagicMock(uid="abc")) as m:
+        assert op.execute(make_context()) == "abc"
+    m.assert_called_once()
 
 
-def test_lamin_flow_init_operator_no_dag_run_raises() -> None:
-    """LaminFlowInitOperator raises when DAG run not in context."""
-    op = LaminFlowInitOperator(task_id="flow_init")
-    ctx = {"dag": MagicMock(dag_id="d1"), "ti": MagicMock()}
-
-    with pytest.raises(AirflowException, match="DAG run not available"):
-        op.execute(ctx)
-
-
-def test_lamin_flow_init_operator_transform_key() -> None:
-    """LaminFlowInitOperator passes transform_key to create_flow_run."""
-    op = LaminFlowInitOperator(
-        task_id="flow_init",
-        transform_key="custom/airflow/my_dag",
-    )
-    ctx = {
-        "dag": MagicMock(dag_id="my_dag"),
-        "dag_run": MagicMock(run_id="r1", conf={}),
-        "ti": MagicMock(),
-    }
-
-    with patch(
-        "lamin_airflow.operators.lamin_flow.create_flow_run",
-        return_value="uid",
-    ) as m_create:
-        op.execute(ctx)
-
-    assert m_create.call_args[1]["transform_key"] == "custom/airflow/my_dag"
-
-
-def test_lamin_step_operator_execute_pattern_a() -> None:
-    """LaminStepOperator runs callable with flow context (Pattern A)."""
-    def my_func() -> str:
-        return "result"
-
-    op = LaminStepOperator(
-        task_id="step1",
-        flow_run_task_id="flow_init",
-        python_callable=my_func,
-    )
-    flow_run = MagicMock(uid="flow_uid_123")
-    ctx = {
-        "ti": MagicMock(xcom_pull=MagicMock(return_value="flow_uid_123")),
-        "dag": MagicMock(dag_id="my_dag"),
-    }
-
+def test_flow_finish_marks_completed_when_no_failures() -> None:
+    op = LaminFlowFinishOperator()
+    flow_run = MagicMock(uid="abc")
+    ctx = make_context(task_id=op.task_id, task_states={"a": "success", op.task_id: "running"})
     with (
-        patch("lamindb.Run") as m_run,
-        patch("lamindb.context") as m_ctx,
-        patch(
-            "lamin_airflow.operators.lamin_step.set_flow_run_context",
-            return_value=MagicMock(),
-        ) as m_set,
-        patch(
-            "lamin_airflow.operators.lamin_step.reset_run_context",
-        ) as m_reset,
+        patch("lamin_airflow.operators.lamin_flow.require_flow_run", return_value=flow_run),
+        patch("lamin_airflow.operators.lamin_flow.finish_run") as m_finish,
     ):
-        m_run.get.return_value = flow_run
-        m_ctx.run = None
-
-        result = op.execute(ctx)
-
-    assert result == "result"
-    m_run.get.assert_called_once_with(uid="flow_uid_123")
-    m_set.assert_called_once_with(flow_run)
-    m_reset.assert_called_once()
-    ctx["ti"].xcom_push.assert_called_once_with(key="return_value", value="result")
-
-
-def test_lamin_step_operator_no_flow_run_uid_raises() -> None:
-    """LaminStepOperator raises when flow_run_uid not in XCom."""
-    op = LaminStepOperator(
-        task_id="step1",
-        flow_run_task_id="flow_init",
-        python_callable=lambda: None,
-    )
-    ctx = {"ti": MagicMock(xcom_pull=MagicMock(return_value=None))}
-
-    with pytest.raises(AirflowException, match="flow_run_uid not found"):
         op.execute(ctx)
+    m_finish.assert_called_once_with(flow_run, success=True)
 
 
-def test_lamin_step_operator_flow_run_key() -> None:
-    """LaminStepOperator pulls flow_run_uid with specified key."""
-    op = LaminStepOperator(
-        task_id="step1",
-        flow_run_task_id="flow_init",
-        flow_run_key="flow_uid",
-        python_callable=lambda: "ok",
-    )
-    ctx = {
-        "ti": MagicMock(),
-        "dag": MagicMock(dag_id="d1"),
-    }
-    ctx["ti"].xcom_pull = MagicMock(return_value="flow_uid_456")
-    m_ctx = MagicMock()
-    m_ctx.run = None
-
+def test_flow_finish_marks_errored_when_a_task_failed() -> None:
+    op = LaminFlowFinishOperator()
+    flow_run = MagicMock(uid="abc")
+    ctx = make_context(task_states={"a": "success", "b": "upstream_failed"})
     with (
-        patch("lamindb.Run") as m_run,
-        patch("lamindb.context", m_ctx),
-        patch("lamin_airflow.operators.lamin_step.set_flow_run_context", return_value=MagicMock()),
-        patch("lamin_airflow.operators.lamin_step.reset_run_context"),
+        patch("lamin_airflow.operators.lamin_flow.require_flow_run", return_value=flow_run),
+        patch("lamin_airflow.operators.lamin_flow.finish_run") as m_finish,
     ):
-        m_run.get.return_value = MagicMock()
         op.execute(ctx)
+    m_finish.assert_called_once_with(flow_run, success=False)
+    ctx["ti"].get_task_states.assert_called_once_with(dag_id="my_dag", run_ids=["run_1"])
 
-    ctx["ti"].xcom_pull.assert_called_once_with(task_ids="flow_init", key="flow_uid")
+
+def test_flow_finish_runs_after_all_tasks() -> None:
+    assert LaminFlowFinishOperator().trigger_rule == "all_done"
 
 
-def test_lamin_step_operator_execute_pattern_b() -> None:
-    """LaminStepOperator runs plain callable with step run (Pattern B)."""
-    def plain_func(x: int) -> int:
-        return x * 2
+def test_step_operator_runs_callable_under_flow_run() -> None:
+    def my_func(x: int, *, y: int) -> int:
+        return x + y
 
-    op = LaminStepOperator(
-        task_id="step1",
-        flow_run_task_id="flow_init",
-        python_callable=plain_func,
-        use_step_decorator=False,
-        op_args=[21],
-    )
-    flow_run = MagicMock(uid="flow_uid")
-    step_run = MagicMock(uid="step_uid")
-    ctx = {
-        "ti": MagicMock(xcom_pull=MagicMock(return_value="flow_uid")),
-        "dag": MagicMock(dag_id="my_dag"),
-        "run_id": "run_1",
-    }
-    m_ctx = MagicMock()
-    m_ctx.run = None
-
+    op = LaminStepOperator(task_id="step", python_callable=my_func, op_args=[1], op_kwargs={"y": 2})
+    flow_run = MagicMock(uid="flow")
     with (
-        patch("lamindb.Run") as m_run,
-        patch("lamindb.context", m_ctx),
-        patch(
-            "lamin_airflow.operators.lamin_step.create_step_run",
-            return_value="step_uid",
-        ) as m_create_step,
-        patch(
-            "lamin_airflow.operators.lamin_step.set_run_context",
-            return_value=MagicMock(),
-        ) as m_set,
-        patch("lamin_airflow.operators.lamin_step.reset_run_context"),
-        patch("lamin_airflow.operators.lamin_step.finish_step_run") as m_finish,
+        patch("lamin_airflow.operators.lamin_step.require_flow_run", return_value=flow_run),
+        patch("lamin_airflow.utils.context.as_lamin_step", side_effect=lambda fn: fn) as m_wrap,
+        patch("lamin_airflow.utils.context.flow_run_context") as m_ctx,
     ):
-        m_run.get.side_effect = [flow_run, step_run]
-
-        result = op.execute(ctx)
-
-    assert result == 42
-    m_create_step.assert_called_once()
-    assert m_create_step.call_args[1]["dag_id"] == "my_dag"
-    assert m_create_step.call_args[1]["task_id"] == "step1"
-    m_set.assert_called_once_with(step_run)
-    m_finish.assert_called_once_with("step_uid", success=True)
+        assert op.execute(make_context()) == 3
+    m_wrap.assert_called_once_with(my_func)
+    m_ctx.assert_called_once_with(flow_run)
 
 
-def test_lamin_step_operator_pattern_b_on_error_finishes_with_failure() -> None:
-    """LaminStepOperator marks step run failed on exception (Pattern B)."""
-    def failing_func() -> None:
-        raise ValueError("task failed")
-
-    op = LaminStepOperator(
-        task_id="step1",
-        flow_run_task_id="flow_init",
-        python_callable=failing_func,
-        use_step_decorator=False,
-    )
-    flow_run = MagicMock(uid="flow_uid")
-    step_run = MagicMock(uid="step_uid")
-    ctx = {
-        "ti": MagicMock(xcom_pull=MagicMock(return_value="flow_uid")),
-        "dag": MagicMock(dag_id="d1"),
-        "run_id": "r1",
-    }
-    m_ctx = MagicMock()
-    m_ctx.run = None
-
+def test_step_operator_without_flow_run_raises() -> None:
+    op = LaminStepOperator(task_id="step", python_callable=lambda: None)
     with (
-        patch("lamindb.Run") as m_run,
-        patch("lamindb.context", m_ctx),
-        patch("lamin_airflow.operators.lamin_step.create_step_run", return_value="step_uid"),
-        patch("lamin_airflow.operators.lamin_step.set_run_context", return_value=MagicMock()),
-        patch("lamin_airflow.operators.lamin_step.reset_run_context"),
-        patch("lamin_airflow.operators.lamin_step.finish_step_run") as m_finish,
-        pytest.raises(ValueError, match="task failed"),
+        patch("lamin_airflow.utils.context.get_flow_run", return_value=None),
+        pytest.raises(AirflowException, match="No LaminDB flow run"),
     ):
-        m_run.get.side_effect = [flow_run, step_run]
-        op.execute(ctx)
-
-    m_finish.assert_called_once_with("step_uid", success=False)
+        op.execute(make_context())
 
 
-def test_lamin_step_operator_no_ti_raises() -> None:
-    """LaminStepOperator raises when task instance not in context."""
-    op = LaminStepOperator(
-        task_id="step1",
-        python_callable=lambda: None,
+def test_flow_run_context_sets_and_restores_global_run() -> None:
+    import lamindb as ln
+
+    flow_run = MagicMock(uid="flow")
+    assert ln.context.run is None
+    with flow_run_context(flow_run):
+        assert ln.context.run is flow_run
+    assert ln.context.run is None
+
+
+def test_flow_run_context_refuses_to_clobber_other_run() -> None:
+    import lamindb as ln
+
+    ln.context._run = MagicMock(uid="other")
+    try:
+        with pytest.raises(AirflowException, match="already set"), flow_run_context(MagicMock(uid="flow")):
+            pass
+    finally:
+        ln.context._run = None
+
+
+def test_is_lamin_tracked_detects_ln_step() -> None:
+    import lamindb as ln
+
+    def plain() -> None: ...
+
+    assert not is_lamin_tracked(plain)
+    assert is_lamin_tracked(ln.step()(plain))
+    assert is_lamin_tracked(ln.flow()(plain))
+
+
+def test_remote_step_source_calls_user_function_by_name(tmp_path) -> None:
+    """The rewritten source defines the user function and rebinds its name to the wrapper."""
+    source = build_remote_step_source(
+        user_source="def extract(count=10):\n    return {'count': count}\n",
+        callable_name="extract",
+        flow_run_uid="flowuid",
+        transform_key="my_dag.py",
+        transform_source="# dag",
     )
-    ctx = {}
+    ns: dict = {}
+    fake_ln = MagicMock()
+    fake_ln.Run.get.return_value = MagicMock(uid="flowuid")
+    fake_ln.context.run = MagicMock()
+    with patch.dict(sys.modules, {"lamindb": fake_ln}):
+        exec(source, ns)
+        assert ns["extract"](count=4) == {"count": 4}
+    fake_ln.Run.get.assert_called_once_with(uid="flowuid")
+    kwargs = fake_ln.track.call_args.kwargs
+    assert kwargs["key"] == "my_dag.py"
+    assert kwargs["source_code"] == "# dag"
+    assert kwargs["entrypoint"] == "extract"
+    assert kwargs["params"] == {"count": 4}
+    assert kwargs["initiated_by_run"] is fake_ln.Run.get.return_value
+    assert fake_ln.context.run._status_code == 0
+    assert fake_ln.context.run.save.called
 
-    with pytest.raises(AirflowException, match="Task instance not available"):
-        op.execute(ctx)
+
+def test_remote_step_source_marks_run_errored_on_exception() -> None:
+    source = build_remote_step_source(
+        user_source="def boom():\n    raise ValueError('x')\n",
+        callable_name="boom",
+        flow_run_uid="flowuid",
+        transform_key="k",
+        transform_source="s",
+    )
+    ns: dict = {}
+    fake_ln = MagicMock()
+    with patch.dict(sys.modules, {"lamindb": fake_ln}):
+        exec(source, ns)
+        with pytest.raises(ValueError, match="x"):
+            ns["boom"]()
+    assert fake_ln.context.run._status_code == 1
 
 
-def test_task_lamin_decorator_registered() -> None:
-    """task.lamin and task.lamin_venv are registered with Airflow."""
+def test_task_decorators_registered() -> None:
     from airflow.sdk import task
 
     assert hasattr(task, "lamin")
     assert hasattr(task, "lamin_venv")
 
 
-def test_task_lamin_decorator_builds_dag() -> None:
-    """@task.lamin produces a task with LaminDecoratedOperator."""
-    from airflow.sdk import task, dag
+def test_task_lamin_builds_operator() -> None:
+    from airflow.sdk import dag, task
 
     @dag
     def test_dag():
@@ -280,18 +190,32 @@ def test_task_lamin_decorator_builds_dag() -> None:
 
         step()
 
-    d = test_dag()
-    tasks = list(d.tasks)
-    assert len(tasks) == 1
-    op = tasks[0]
+    (op,) = test_dag().tasks
     assert type(op).__name__ == "LaminDecoratedOperator"
     assert op.custom_operator_name == "@task.lamin"
-    assert op.flow_run_task_id == "flow_init"
+    assert op.python_callable.__name__ == "step"
 
 
-def test_task_lamin_venv_decorator_builds_dag() -> None:
-    """@task.lamin_venv produces a task with LaminVenvDecoratedOperator."""
-    from airflow.sdk import task, dag
+def test_task_lamin_venv_adds_lamindb_requirement() -> None:
+    from airflow.sdk import dag, task
+
+    @dag
+    def test_dag():
+        @task.lamin_venv(requirements=["pandas"])
+        def step():
+            return 1
+
+        step()
+
+    (op,) = test_dag().tasks
+    assert type(op).__name__ == "LaminVenvDecoratedOperator"
+    assert op.custom_operator_name == "@task.lamin_venv"
+    assert op.requirements == ["pandas", "lamindb"]
+
+
+def test_remote_operator_rewrites_shipped_source() -> None:
+    """get_python_source() returns the plain function outside execute and the wrapper inside."""
+    from airflow.sdk import dag, task
 
     @dag
     def test_dag():
@@ -301,132 +225,46 @@ def test_task_lamin_venv_decorator_builds_dag() -> None:
 
         step()
 
-    d = test_dag()
-    tasks = list(d.tasks)
-    assert len(tasks) == 1
-    op = tasks[0]
-    assert type(op).__name__ == "LaminVenvDecoratedOperator"
-    assert op.custom_operator_name == "@task.lamin_venv"
-    assert op.flow_run_task_id == "flow_init"
+    (op,) = test_dag().tasks
+    plain = op.get_python_source()
+    assert plain.startswith("def step():") and "_lamin_airflow_step" not in plain
 
+    flow_run = MagicMock(uid="flowuid")
+    flow_run.transform.key = "my_dag.py"
+    captured: dict = {}
 
-def test_lamin_step_operator_implicit_init_single_root() -> None:
-    """LaminStepOperator with implicit_init creates flow run when it is the only root."""
-    def my_func() -> str:
-        return "implicit_result"
-
-    op = LaminStepOperator(
-        task_id="extract",
-        python_callable=my_func,
-        implicit_init=True,
-    )
-    root_task = MagicMock()
-    root_task.task_id = "extract"
-    root_task.upstream_list = []
-    mock_dag = MagicMock()
-    mock_dag.dag_id = "my_dag"
-    mock_dag.roots = [root_task]
-    mock_dag.tasks = [root_task]
-    ctx = {
-        "ti": MagicMock(),
-        "dag": mock_dag,
-        "dag_run": MagicMock(
-            run_id="run_123",
-            conf={},
-            execution_date=None,
-            data_interval_start=None,
-            data_interval_end=None,
-        ),
-    }
+    def fake_super_execute(self, context):
+        captured["source"] = self.get_python_source()
+        return "ok"
 
     with (
-        patch("lamin_airflow.utils.flow_resolver.create_flow_run", return_value="flow_uid_implicit"),
-        patch("lamindb.Run") as m_run,
-        patch("lamindb.context") as m_ctx,
-        patch(
-            "lamin_airflow.operators.lamin_step.set_flow_run_context",
-            return_value=MagicMock(),
-        ) as m_set,
-        patch("lamin_airflow.operators.lamin_step.reset_run_context"),
+        patch("lamin_airflow.operators.lamin_step.require_flow_run", return_value=flow_run),
+        patch("lamin_airflow.operators.lamin_step.dag_source", return_value="# dag source"),
+        patch.object(type(op).__mro__[2], "execute", fake_super_execute),
     ):
-        m_run.get.return_value = MagicMock(uid="flow_uid_implicit")
-        m_ctx.run = None
-
-        result = op.execute(ctx)
-
-    assert result == "implicit_result"
-    assert ctx["ti"].xcom_push.call_count == 2
-    ctx["ti"].xcom_push.assert_any_call(key="flow_run_uid", value="flow_uid_implicit")
-    ctx["ti"].xcom_push.assert_any_call(key="return_value", value="implicit_result")
+        assert op.execute(make_context()) == "ok"
+    assert "def step():" in captured["source"]
+    assert "'flowuid'" in captured["source"] and "'# dag source'" in captured["source"]
+    assert captured["source"].rstrip().endswith("step = _lamin_airflow_step")
+    assert op.get_python_source() == plain  # state cleared after execute
 
 
-def test_task_lamin_k8s_decorator_registered() -> None:
-    """task.lamin_k8s is registered with Airflow when cncf.kubernetes is installed."""
+def test_task_lamin_k8s_registered_and_builds_operator() -> None:
     pytest.importorskip("airflow.providers.cncf.kubernetes")
-    from airflow.sdk import task
-
-    assert hasattr(task, "lamin_k8s")
-
-
-def test_task_lamin_k8s_decorator_builds_dag() -> None:
-    """@task.lamin_k8s produces a task with LaminK8sDecoratedOperator."""
-    pytest.importorskip("airflow.providers.cncf.kubernetes")
-    from airflow.sdk import task, dag
+    from airflow.sdk import dag, task
 
     @dag
     def test_dag():
-        @task.lamin_k8s
+        @task.lamin_k8s(image="python:3.11")
         def step():
             return 1
 
         step()
 
-    d = test_dag()
-    tasks = list(d.tasks)
-    assert len(tasks) == 1
-    op = tasks[0]
+    (op,) = test_dag().tasks
     assert type(op).__name__ == "LaminK8sDecoratedOperator"
     assert op.custom_operator_name == "@task.lamin_k8s"
-    assert op.flow_run_task_id == "flow_init"
 
 
-def test_resolve_flow_run_uid_implicit_init_no_roots_raises() -> None:
-    """resolve_flow_run_uid raises when implicit_init and DAG has no roots."""
-    from lamin_airflow.utils.flow_resolver import resolve_flow_run_uid
-
-    mock_dag = MagicMock()
-    mock_dag.roots = []
-    mock_dag.tasks = []
-    ctx = {"ti": MagicMock(), "dag": mock_dag, "dag_run": MagicMock(run_id="r1")}
-
-    with pytest.raises(AirflowException, match="at least one root task"):
-        resolve_flow_run_uid(
-            context=ctx,
-            flow_run_task_id="__implicit__",
-            flow_run_key="return_value",
-            implicit_init=True,
-            task_id="step1",
-        )
-
-
-def test_resolve_flow_run_uid_implicit_init_multiple_roots_raises() -> None:
-    """resolve_flow_run_uid raises when implicit_init and DAG has multiple roots."""
-    from lamin_airflow.utils.flow_resolver import resolve_flow_run_uid
-
-    mock_dag = MagicMock()
-    r1 = MagicMock()
-    r1.task_id = "a"
-    r2 = MagicMock()
-    r2.task_id = "b"
-    mock_dag.roots = [r1, r2]
-    mock_dag.tasks = [r1, r2]
-    ctx = {"ti": MagicMock(), "dag": mock_dag, "dag_run": MagicMock(run_id="r1")}
-
-    with pytest.raises(AirflowException, match="exactly one root"):
-        resolve_flow_run_uid(
-            context=ctx,
-            flow_run_task_id="__implicit__",
-            flow_run_key="return_value",
-            implicit_init=True,
-            task_id="step1",
-        )
+def test_step_operator_resolves_xcom_args() -> None:
+    assert set(LaminStepOperator.template_fields) >= {"op_args", "op_kwargs"}
