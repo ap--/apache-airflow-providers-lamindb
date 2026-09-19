@@ -4,8 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from airflow.sdk import BaseOperator
-from airflow.utils.trigger_rule import TriggerRule
+from airflow.sdk import BaseOperator, TriggerRule
 
 from lamin_airflow.utils.context import finish_run, require_flow_run, start_flow_run
 
@@ -18,10 +17,15 @@ class LaminFlowInitOperator(BaseOperator):
     Creates (or restarts, on retry) a ``Run`` of the DAG file's ``Transform`` and tags
     it with the DAG run so downstream Lamin steps can find it. Place it upstream of
     every Lamin step. Returns the flow run uid.
+
+    Marked as an Airflow *setup* task by default, pairing with the *teardown*
+    ``LaminFlowFinishOperator``; pass ``is_setup=False`` to opt out.
     """
 
-    def __init__(self, *, task_id: str = "lamin_flow_init", **kwargs: Any) -> None:
+    def __init__(self, *, task_id: str = "lamin_flow_init", is_setup: bool = True, **kwargs: Any) -> None:
         super().__init__(task_id=task_id, **kwargs)
+        if is_setup:
+            self.as_setup()
 
     def execute(self, context: Any) -> str:
         return start_flow_run(context).uid
@@ -30,19 +34,26 @@ class LaminFlowInitOperator(BaseOperator):
 class LaminFlowFinishOperator(BaseOperator):
     """Close the LaminDB flow run with the DAG run's outcome.
 
-    Runs with ``trigger_rule=ALL_DONE`` so it executes after every other task.
-    Marks the flow run errored if any other task in the DAG run failed.
-    Place it downstream of every Lamin step (e.g. ``steps >> finish``).
+    Marked as an Airflow *teardown* task by default: it runs after every other task
+    (``trigger_rule=all_done_setup_success``) and is ignored when Airflow decides the
+    DAG run state, so a failed step still fails the DAG run. Marks the flow run
+    errored if any other task in the DAG run failed. Place it downstream of every
+    Lamin step (``init >> steps >> finish``). Pass ``is_teardown=False`` together with
+    your own ``trigger_rule`` to opt out.
     """
 
     def __init__(
         self,
         *,
         task_id: str = "lamin_flow_finish",
-        trigger_rule: str = TriggerRule.ALL_DONE,
+        is_teardown: bool = True,
         **kwargs: Any,
     ) -> None:
-        super().__init__(task_id=task_id, trigger_rule=trigger_rule, **kwargs)
+        if not is_teardown:
+            kwargs.setdefault("trigger_rule", TriggerRule.ALL_DONE)
+        super().__init__(task_id=task_id, **kwargs)
+        if is_teardown:
+            self.as_teardown()
 
     def execute(self, context: Any) -> str:
         flow_run = require_flow_run(context)

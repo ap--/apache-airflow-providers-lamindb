@@ -18,6 +18,16 @@ pip install -e ".[kubernetes]"   # adds @task.lamin_k8s
 
 Requires `apache-airflow>=3.0` and `lamindb`, connected to an instance on the worker.
 
+Version compatibility is constrained by Airflow's and lamindb's shared `universal-pathlib`
+pin, not by this package:
+
+| Airflow | newest lamindb that installs alongside |
+|---|---|
+| 3.1.x | 2.4.2 |
+| 3.2.0 and later | 2.10.0 (current latest) |
+
+Tested end to end with Airflow 3.1.7 + lamindb 2.2.1 and Airflow 3.3.2 + lamindb 2.10.0.
+
 ## Usage
 
 ```python
@@ -58,8 +68,12 @@ How it works:
   any DAG topology. A step without an upstream init fails with a clear error.
 - The step callable is wrapped with `ln.step()` at execution time, so lamindb records
   source, parameters and outcome and links the step run to the flow run.
-- `LaminFlowFinishOperator` runs with `trigger_rule="all_done"` and closes the flow run
-  as `completed`, or `errored` if any task in the DAG run failed.
+- `LaminFlowFinishOperator` closes the flow run as `completed`, or `errored` if any
+  task in the DAG run failed.
+- Init is an Airflow *setup* task and finish a *teardown* task. Finish therefore runs
+  after every other task, and Airflow ignores it when deciding the DAG run state, so
+  a failed step still fails the DAG run even though finish is the last task. Pass
+  `is_setup=False` / `is_teardown=False` to opt out.
 
 ## Operators and decorators
 
@@ -68,14 +82,15 @@ How it works:
 - `LaminStepOperator(task_id, python_callable, op_args=None, op_kwargs=None)`
 - `@task.lamin` – TaskFlow variant of `LaminStepOperator`.
 - `@task.lamin_venv(...)` – like `@task.virtualenv`; the function runs as a step inside
-  the virtualenv. `lamindb` is added to `requirements` if missing. The venv inherits the
-  worker environment, so it connects to the same instance.
+  the virtualenv. `lamindb==<worker version>` is added to `requirements` unless you list
+  lamindb yourself; the venv must speak the instance's schema version.
 - `@task.lamin_k8s(image=..., ...)` – like `@task.kubernetes`. The image needs `lamindb`
-  and instance credentials (for example `LAMIN_API_KEY` and `LAMIN_CURRENT_INSTANCE`).
+  at the worker's version and credentials for the instance (for example `LAMIN_API_KEY`).
 
 The remote variants reuse Airflow's mechanism of shipping the function's source text and
-append a small wrapper that binds the step to the flow run. Nothing is pickled by
-reference, and the remote environment only needs `lamindb`.
+append a small wrapper that connects to the worker's instance by slug, binds the step to
+the flow run and records the outcome. Nothing is pickled by reference, and the remote
+environment only needs `lamindb`.
 
 ## Notes
 
@@ -91,5 +106,9 @@ reference, and the remote environment only needs `lamindb`.
 ```bash
 pytest                                   # unit tests, lamindb mocked
 lamin init --storage ./test-store --name airflowtest
-LAMINDB_INTEGRATION_TEST=1 pytest tests/test_lamin_integration.py
+LAMINDB_INTEGRATION_TEST=1 pytest tests/test_lamin_integration.py   # operators against a real instance
+
+export AIRFLOW_HOME=/tmp/airflow-e2e AIRFLOW__CORE__LOAD_EXAMPLES=False
+airflow db migrate
+LAMINDB_E2E_TEST=1 pytest tests/test_e2e_dag_test.py                # dag.test(): real task runner + virtualenv
 ```

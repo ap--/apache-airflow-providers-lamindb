@@ -68,8 +68,12 @@ def test_flow_finish_marks_errored_when_a_task_failed() -> None:
     ctx["ti"].get_task_states.assert_called_once_with(dag_id="my_dag", run_ids=["run_1"])
 
 
-def test_flow_finish_runs_after_all_tasks() -> None:
-    assert LaminFlowFinishOperator().trigger_rule == "all_done"
+def test_flow_init_and_finish_are_setup_and_teardown() -> None:
+    init, finish = LaminFlowInitOperator(), LaminFlowFinishOperator()
+    assert init.is_setup and not init.is_teardown
+    assert finish.is_teardown and finish.trigger_rule == "all_done_setup_success"
+    plain = LaminFlowFinishOperator(is_teardown=False)
+    assert not plain.is_teardown and plain.trigger_rule == "all_done"
 
 
 def test_step_operator_runs_callable_under_flow_run() -> None:
@@ -136,6 +140,7 @@ def test_remote_step_source_calls_user_function_by_name(tmp_path) -> None:
         flow_run_uid="flowuid",
         transform_key="my_dag.py",
         transform_source="# dag",
+        instance_slug="owner/instance",
     )
     ns: dict = {}
     fake_ln = MagicMock()
@@ -144,6 +149,7 @@ def test_remote_step_source_calls_user_function_by_name(tmp_path) -> None:
     with patch.dict(sys.modules, {"lamindb": fake_ln}):
         exec(source, ns)
         assert ns["extract"](count=4) == {"count": 4}
+    fake_ln.connect.assert_called_once_with("owner/instance")
     fake_ln.Run.get.assert_called_once_with(uid="flowuid")
     kwargs = fake_ln.track.call_args.kwargs
     assert kwargs["key"] == "my_dag.py"
@@ -196,6 +202,27 @@ def test_task_lamin_builds_operator() -> None:
     assert op.python_callable.__name__ == "step"
 
 
+def test_task_lamin_keeps_xcom_args_and_dependencies() -> None:
+    """Regression: the step operator must not reset op_args set by the TaskFlow decorator."""
+    from airflow.sdk import dag, task
+
+    @dag
+    def test_dag():
+        @task
+        def produce():
+            return 1
+
+        @task.lamin
+        def consume(value):
+            return value
+
+        consume(produce())
+
+    consume_op = test_dag().get_task("consume")
+    assert consume_op.upstream_task_ids == {"produce"}
+    assert len(consume_op.op_args) == 1
+
+
 def test_task_lamin_venv_adds_lamindb_requirement() -> None:
     from airflow.sdk import dag, task
 
@@ -210,7 +237,9 @@ def test_task_lamin_venv_adds_lamindb_requirement() -> None:
     (op,) = test_dag().tasks
     assert type(op).__name__ == "LaminVenvDecoratedOperator"
     assert op.custom_operator_name == "@task.lamin_venv"
-    assert op.requirements == ["pandas", "lamindb"]
+    from importlib.metadata import version
+
+    assert op.requirements == ["pandas", f"lamindb=={version('lamindb')}"]
 
 
 def test_remote_operator_rewrites_shipped_source() -> None:
@@ -240,9 +269,11 @@ def test_remote_operator_rewrites_shipped_source() -> None:
     with (
         patch("lamin_airflow.operators.lamin_step.require_flow_run", return_value=flow_run),
         patch("lamin_airflow.operators.lamin_step.dag_source", return_value="# dag source"),
+        patch("lamin_airflow.operators.lamin_step.current_instance_slug", return_value="owner/instance"),
         patch.object(type(op).__mro__[2], "execute", fake_super_execute),
     ):
         assert op.execute(make_context()) == "ok"
+    assert "ln.connect('owner/instance')" in captured["source"]
     assert "def step():" in captured["source"]
     assert "'flowuid'" in captured["source"] and "'# dag source'" in captured["source"]
     assert captured["source"].rstrip().endswith("step = _lamin_airflow_step")

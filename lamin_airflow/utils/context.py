@@ -175,6 +175,14 @@ def run_as_step(fn: Callable[..., Any], flow_run: Run, *args: Any, **kwargs: Any
         return as_lamin_step(fn)(*args, **kwargs)
 
 
+def current_instance_slug() -> str | None:
+    """Slug of the connected lamindb instance, or None if not configured."""
+    import lamindb as ln
+
+    slug = ln.setup.settings.instance.slug
+    return None if slug == "none/none" else slug
+
+
 def dag_source(dag: Any) -> str:
     """Source of the DAG file; hashes identically to what ``ln.track(path=...)`` stored."""
     return Path(dag.fileloc).read_text()
@@ -187,6 +195,7 @@ def build_remote_step_source(
     flow_run_uid: str,
     transform_key: str,
     transform_source: str,
+    instance_slug: str | None = None,
 ) -> str:
     """Compose the script body Airflow ships to a virtualenv or a pod.
 
@@ -196,7 +205,12 @@ def build_remote_step_source(
     Only ``lamindb`` is required in the remote environment; nothing is pickled by
     reference. Passing the DAG source with the flow transform's key makes lamindb
     resolve the same ``Transform`` by hash, exactly like the in-process path.
+
+    ``instance_slug`` is connected explicitly: newer lamindb versions resolve the
+    default instance from the working directory, which the remote process does not
+    share with the worker.
     """
+    connect = f"    ln.connect({instance_slug!r})\n" if instance_slug else ""
     wrapper = f"""
 
 def _lamin_airflow_step(*args, **kwargs):
@@ -205,7 +219,7 @@ def _lamin_airflow_step(*args, **kwargs):
 
     import lamindb as ln
 
-    flow_run = ln.Run.get(uid={flow_run_uid!r})
+{connect}    flow_run = ln.Run.get(uid={flow_run_uid!r})
     bound = inspect.signature(_lamin_airflow_user_fn).bind(*args, **kwargs)
     bound.apply_defaults()
     ln.track(

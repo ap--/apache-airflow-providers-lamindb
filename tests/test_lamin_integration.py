@@ -158,7 +158,7 @@ def test_remote_step_source_runs_in_fresh_interpreter(dag_module, run_id, tmp_pa
     import lamindb as ln
 
     from lamin_airflow import LaminFlowInitOperator
-    from lamin_airflow.utils.context import build_remote_step_source, dag_source
+    from lamin_airflow.utils.context import build_remote_step_source, current_instance_slug, dag_source
 
     init = LaminFlowInitOperator()
     flow_uid = init.execute(make_context(dag_module, run_id, init.task_id))
@@ -176,6 +176,7 @@ def test_remote_step_source_runs_in_fresh_interpreter(dag_module, run_id, tmp_pa
         flow_run_uid=flow_uid,
         transform_key=flow_run.transform.key,
         transform_source=dag_source(dag_module.dag),
+        instance_slug=current_instance_slug(),
     )
     # mimic Airflow's template: define, then call by name
     script += '\nimport json, sys\nprint("RESULT=" + json.dumps(extract(count=7)))\n'

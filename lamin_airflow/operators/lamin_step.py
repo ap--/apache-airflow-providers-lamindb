@@ -9,6 +9,7 @@ from airflow.sdk import BaseOperator
 
 from lamin_airflow.utils.context import (
     build_remote_step_source,
+    current_instance_slug,
     dag_source,
     require_flow_run,
     run_as_step,
@@ -53,7 +54,7 @@ class RemoteLaminStepMixin:
     installed remotely, connected to the same instance.
     """
 
-    _lamin_remote: dict[str, str] | None = None
+    _lamin_remote: dict[str, Any] | None = None
 
     def execute(self, context: Any) -> Any:  # type: ignore[override]
         flow_run = require_flow_run(context)
@@ -61,6 +62,7 @@ class RemoteLaminStepMixin:
             "flow_run_uid": flow_run.uid,
             "transform_key": flow_run.transform.key,
             "transform_source": dag_source(context["dag"]),
+            "instance_slug": current_instance_slug(),
         }
         try:
             return super().execute(context)  # type: ignore[misc]
@@ -94,8 +96,15 @@ def _lamin_decorated_operator_class() -> type:
             op_kwargs: Mapping[str, Any] | None = None,
             **kwargs: Any,
         ) -> None:
+            # DecoratedOperator sets op_args/op_kwargs itself, then calls the upstream
+            # __init__ with kwargs_to_upstream; LaminStepOperator must see the same values
+            # or it resets them and XComArg dependencies are lost.
             super().__init__(
-                kwargs_to_upstream={"python_callable": python_callable},
+                kwargs_to_upstream={
+                    "python_callable": python_callable,
+                    "op_args": op_args,
+                    "op_kwargs": op_kwargs,
+                },
                 python_callable=python_callable,
                 op_args=op_args,
                 op_kwargs=op_kwargs,
@@ -121,6 +130,12 @@ def lamin_task(
     )
 
 
+def _installed_lamindb_version() -> str:
+    from importlib.metadata import version
+
+    return version("lamindb")
+
+
 def _lamin_venv_decorated_operator_class() -> type:
     from airflow.providers.standard.decorators.python_virtualenv import (
         _PythonVirtualenvDecoratedOperator,
@@ -134,7 +149,8 @@ def _lamin_venv_decorated_operator_class() -> type:
         def __init__(self, **kwargs: Any) -> None:
             super().__init__(**kwargs)
             if not any(str(r).startswith("lamindb") for r in self.requirements):
-                self.requirements.append("lamindb")
+                # Pin to the worker's version: the venv must speak the instance's schema.
+                self.requirements.append(f"lamindb=={_installed_lamindb_version()}")
 
     return LaminVenvDecoratedOperator
 
