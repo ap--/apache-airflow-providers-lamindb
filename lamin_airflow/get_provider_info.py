@@ -5,7 +5,7 @@ def get_provider_info() -> dict[str, object]:
     return {
         "package-name": "lamin-airflow",
         "name": "Lamin",
-        "description": "Map Airflow DAG runs to LaminDB flows and tasks to steps (LaminFlowInitOperator, LaminStepOperator, @task.lamin, @task.lamin_venv, @task.lamin_k8s).",
+        "description": "Map Airflow DAG runs to LaminDB flows and tasks to steps (LaminFlowInitOperator, LaminFlowFinishOperator, LaminStepOperator, @task.lamin, @task.lamin_venv, @task.lamin_k8s).",
         "version": "0.1.0",
         "integrations": [{"integration-name": "Lamin"}],
         "operators": [

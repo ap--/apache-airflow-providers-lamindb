@@ -1,77 +1,73 @@
-"""LaminFlowInitOperator: creates a LaminDB flow run for an Airflow DAG run."""
+"""Operators that open and close the LaminDB flow run of a DAG run."""
 
 from __future__ import annotations
 
 from typing import Any
 
-from airflow.exceptions import AirflowException
-from airflow.sdk import BaseOperator
+from airflow.sdk import BaseOperator, TriggerRule
 
-from lamin_airflow.utils.context import create_flow_run
+from lamin_airflow.utils.context import finish_run, require_flow_run, start_flow_run
+
+FAILED_STATES = frozenset({"failed", "upstream_failed"})
 
 
 class LaminFlowInitOperator(BaseOperator):
-    """Creates a LaminDB flow run for this DAG run and pushes flow_run_uid to XCom.
+    """Start the LaminDB flow run for this DAG run.
 
-    Use as the first task in a DAG so downstream LaminStepOperator tasks can
-    pull the flow_run_uid and run as LaminDB steps under this flow.
+    Creates (or restarts, on retry) a ``Run`` of the DAG file's ``Transform`` and tags
+    it with the DAG run so downstream Lamin steps can find it. Place it upstream of
+    every Lamin step. Returns the flow run uid.
 
-    Example:
-        with DAG("my_pipeline", ...) as dag:
-            flow_init = LaminFlowInitOperator(task_id="flow_init")
-            step1 = LaminStepOperator(
-                task_id="step1",
-                flow_run_task_id="flow_init",
-                python_callable=my_func,
-            )
-            flow_init >> step1
+    Marked as an Airflow *setup* task by default, pairing with the *teardown*
+    ``LaminFlowFinishOperator``; pass ``is_setup=False`` to opt out.
+    """
+
+    def __init__(self, *, task_id: str = "lamin_flow_init", is_setup: bool = True, **kwargs: Any) -> None:
+        super().__init__(task_id=task_id, **kwargs)
+        if is_setup:
+            self.as_setup()
+
+    def execute(self, context: Any) -> str:
+        return start_flow_run(context).uid
+
+
+class LaminFlowFinishOperator(BaseOperator):
+    """Close the LaminDB flow run with the DAG run's outcome.
+
+    Marked as an Airflow *teardown* task by default: it runs after every other task
+    (``trigger_rule=all_done_setup_success``) and is ignored when Airflow decides the
+    DAG run state, so a failed step still fails the DAG run. Marks the flow run
+    errored if any other task in the DAG run failed. Place it downstream of every
+    Lamin step (``init >> steps >> finish``). Pass ``is_teardown=False`` together with
+    your own ``trigger_rule`` to opt out.
     """
 
     def __init__(
         self,
         *,
-        task_id: str = "flow_init",
-        transform_key: str | None = None,
+        task_id: str = "lamin_flow_finish",
+        is_teardown: bool = True,
         **kwargs: Any,
     ) -> None:
+        if not is_teardown:
+            kwargs.setdefault("trigger_rule", TriggerRule.ALL_DONE)
         super().__init__(task_id=task_id, **kwargs)
-        self.transform_key = transform_key
+        if is_teardown:
+            self.as_teardown()
 
     def execute(self, context: Any) -> str:
-        dag = context.get("dag")
-        if dag is None:
-            dag = getattr(self, "_dag", None)
-        dag_run = context.get("dag_run")
-        if dag is None:
-            raise AirflowException("DAG not available in context")
-        if dag_run is None:
-            raise AirflowException("DAG run not available in context")
+        flow_run = require_flow_run(context)
+        finish_run(flow_run, success=not self._dag_run_failed(context))
+        return flow_run.uid
 
-        dag_id = dag.dag_id
-        dag_run_id = str(dag_run.run_id)
-
-        params: dict[str, Any] = {
-            "dag_id": dag_id,
-            "dag_run_id": dag_run_id,
-        }
-        if hasattr(dag_run, "conf") and dag_run.conf:
-            params["conf"] = dict(dag_run.conf)
-        if hasattr(dag_run, "execution_date") and dag_run.execution_date is not None:
-            params["execution_date"] = str(dag_run.execution_date)
-        if hasattr(dag_run, "data_interval_start") and dag_run.data_interval_start:
-            params["data_interval_start"] = str(dag_run.data_interval_start)
-        if hasattr(dag_run, "data_interval_end") and dag_run.data_interval_end:
-            params["data_interval_end"] = str(dag_run.data_interval_end)
-
-        flow_run_uid = create_flow_run(
-            dag_id=dag_id,
-            dag_run_id=dag_run_id,
-            params=params,
-            transform_key=self.transform_key,
-        )
-
-        ti = context.get("ti")
-        if ti is not None:
-            ti.xcom_push(key="return_value", value=flow_run_uid)
-
-        return flow_run_uid
+    def _dag_run_failed(self, context: Any) -> bool:
+        ti = context["ti"]
+        dag_id = context["dag"].dag_id
+        run_id = str(context["run_id"])
+        get_task_states = getattr(ti, "get_task_states", None)
+        if get_task_states is None:
+            self.log.warning("Task states unavailable; marking flow run completed")
+            return False
+        states_by_run = get_task_states(dag_id=dag_id, run_ids=[run_id])
+        states = states_by_run.get(run_id, {})
+        return any(state in FAILED_STATES for task_id, state in states.items() if task_id != self.task_id)
