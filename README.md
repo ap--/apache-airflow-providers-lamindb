@@ -1,4 +1,4 @@
-# lamin-airflow
+# lamindb-airflow
 
 Apache Airflow 3 provider that records DAG runs as [LaminDB](https://lamin.ai) flow runs
 and tasks as steps.
@@ -12,11 +12,14 @@ and tasks as steps.
 ## Installation
 
 ```bash
-pip install -e .                 # in-process steps and @task.lamin_venv
-pip install -e ".[kubernetes]"   # adds @task.lamin_k8s
+pip install lamindb-airflow                     # virtualenv steps only: the worker needs no lamindb
+pip install "lamindb-airflow[lamindb]"          # adds in-process steps (@task.lamindb, LaminDBStepOperator)
+pip install "lamindb-airflow[cncf.kubernetes]"  # adds @task.lamindb_k8s
 ```
 
-Requires `apache-airflow>=3.0` and `lamindb`, connected to an instance on the worker.
+Requires `apache-airflow>=3.0` and `apache-airflow-providers-standard`. Wherever lamindb
+runs (worker, virtualenv or pod) it must be able to connect to the instance, for example
+via `LAMIN_API_KEY` and `LAMIN_CURRENT_INSTANCE`.
 
 Version compatibility is constrained by Airflow's and lamindb's shared `universal-pathlib`
 pin, not by this package:
@@ -26,7 +29,7 @@ pin, not by this package:
 | 3.1.x | 2.4.2 |
 | 3.2.0 and later | 2.10.0 (current latest) |
 
-Tested end to end with Airflow 3.1.7 + lamindb 2.2.1 and Airflow 3.3.2 + lamindb 2.10.0.
+Tested end to end with Airflow 3.3.2 + lamindb 2.10.0.
 
 ## Usage
 
@@ -34,7 +37,7 @@ Tested end to end with Airflow 3.1.7 + lamindb 2.2.1 and Airflow 3.3.2 + lamindb
 import lamindb as ln
 from airflow.sdk import DAG, task
 
-from lamin_airflow import LaminFlowFinishOperator, LaminFlowInitOperator, LaminStepOperator
+from lamindb_airflow import LaminDBStepOperator
 
 
 def extract(count: int = 10) -> dict:
@@ -47,50 +50,86 @@ def transform(data: dict) -> dict:
 
 
 with DAG("my_pipeline") as dag:
-    flow_init = LaminFlowInitOperator()
-    flow_finish = LaminFlowFinishOperator()
+    t1 = LaminDBStepOperator(task_id="extract", python_callable=extract, op_kwargs={"count": 3})
+    t2 = LaminDBStepOperator(task_id="transform", python_callable=transform, op_args=[t1.output])
 
-    t1 = LaminStepOperator(task_id="extract", python_callable=extract, op_kwargs={"count": 3})
-    t2 = LaminStepOperator(task_id="transform", python_callable=transform, op_args=[t1.output])
-
-    @task.lamin
+    @task.lamindb
     def load(data: dict) -> int:
         return data["count"]
 
-    flow_init >> t1 >> t2 >> load(t2.output) >> flow_finish
+    @task.lamindb_venv(requirements=["pandas"])
+    def report(count: int) -> None:
+        import pandas as pd
+
+        print(pd.Series([count]).describe())
+
+    t1 >> t2 >> report(load(t2.output))
+```
+
+Each step adds the DAG's `lamindb_flow_init` and `lamindb_flow_finish` tasks on first use
+and wires `init >> step >> finish` (`auto_flow=True`). To configure them, declare them
+yourself before the steps; they are reused:
+
+```python
+from lamindb_airflow import LaminDBFlowFinishOperator, LaminDBFlowInitOperator
+
+with DAG("my_pipeline") as dag:
+    init = LaminDBFlowInitOperator(retries=3)
+    finish = LaminDBFlowFinishOperator()
+    ...
 ```
 
 How it works:
 
-- `LaminFlowInitOperator` calls `ln.track()` on the DAG file and tags the run with the
-  DAG run id. Retrying it restarts the same run instead of creating a second one.
-- Every step looks the flow run up by that tag. No XCom plumbing, no configuration,
-  any DAG topology. A step without an upstream init fails with a clear error.
+- The flow init task calls `ln.track()` on the DAG file and tags the run with the DAG
+  run id. Retrying it restarts the same run instead of creating a second one.
+- Every step looks the flow run up by that tag. No XCom plumbing, any DAG topology. A
+  step whose flow init has not run fails with a clear error.
 - The step callable is wrapped with `ln.step()` at execution time, so lamindb records
   source, parameters and outcome and links the step run to the flow run.
-- `LaminFlowFinishOperator` closes the flow run as `completed`, or `errored` if any
-  task in the DAG run failed.
+- The flow finish task closes the flow run as `completed`, or `errored` if any task in
+  the DAG run failed.
 - Init is an Airflow *setup* task and finish a *teardown* task. Finish therefore runs
-  after every other task, and Airflow ignores it when deciding the DAG run state, so
-  a failed step still fails the DAG run even though finish is the last task. Pass
-  `is_setup=False` / `is_teardown=False` to opt out.
+  after the steps even when they fail, and Airflow ignores it when deciding the DAG run
+  state, so a failed step still fails the DAG run. Pass `is_setup=False` /
+  `is_teardown=False` to opt out.
+
+Auto-wiring caveats:
+
+- The first LaminDB step decides the kind of flow tasks: in-process for
+  `LaminDBStepOperator` / `@task.lamindb`, virtualenv for `@task.lamindb_venv` (copying
+  its Python version, index, lamindb pin and env settings) and `@task.lamindb_k8s`.
+- Mapped steps (`.expand()`) are not auto-wired. Declare the flow operators and wire
+  `init >> mapped_step >> finish` yourself.
+- Flow operators declared *after* an auto-wiring step clash with the auto-added task id;
+  declare them first, or pass `auto_flow=False` to the steps.
+- Finish waits for LaminDB steps only; wire other tasks upstream of it if the flow run
+  should cover them.
 
 ## Operators and decorators
 
-- `LaminFlowInitOperator(task_id="lamin_flow_init")`
-- `LaminFlowFinishOperator(task_id="lamin_flow_finish")`
-- `LaminStepOperator(task_id, python_callable, op_args=None, op_kwargs=None)`
-- `@task.lamin` – TaskFlow variant of `LaminStepOperator`.
-- `@task.lamin_venv(...)` – like `@task.virtualenv`; the function runs as a step inside
-  the virtualenv. `lamindb==<worker version>` is added to `requirements` unless you list
-  lamindb yourself; the venv must speak the instance's schema version.
-- `@task.lamin_k8s(image=..., ...)` – like `@task.kubernetes`. The image needs `lamindb`
-  at the worker's version and credentials for the instance (for example `LAMIN_API_KEY`).
+| | needs lamindb on the worker |
+|---|---|
+| `LaminDBFlowInitOperator(task_id="lamindb_flow_init")` | yes |
+| `LaminDBFlowFinishOperator(task_id="lamindb_flow_finish")` | yes |
+| `LaminDBVenvFlowInitOperator(...)`, `LaminDBVenvFlowFinishOperator(...)` – same, in a virtualenv; accept `PythonVirtualenvOperator` arguments | no |
+| `LaminDBStepOperator(task_id, python_callable, op_args=None, op_kwargs=None)` | yes |
+| `@task.lamindb` – TaskFlow variant of `LaminDBStepOperator` | yes |
+| `@task.lamindb_venv(...)` – like `@task.virtualenv`; the function runs as a step in the virtualenv | no |
+| `@task.lamindb_k8s(image=..., ...)` – like `@task.kubernetes`; the image needs lamindb and credentials | no |
+
+All step operators accept `auto_flow`. The virtualenv and pod variants also accept
+`lamindb_instance`, the instance slug to connect to (default: the worker's instance if
+lamindb is set up there, else `LAMIN_CURRENT_INSTANCE`). The virtualenv variants accept
+`lamindb_version`: `lamindb==<version>` is added to `requirements` unless you list
+lamindb yourself (default: the worker's version if installed, else the latest). The
+remote side must speak the instance's schema version.
 
 The remote variants reuse Airflow's mechanism of shipping the function's source text and
-append a small wrapper that connects to the worker's instance by slug, binds the step to
-the flow run and records the outcome. Nothing is pickled by reference, and the remote
-environment only needs `lamindb`.
+append a small wrapper that connects to the instance, binds the step to the flow run and
+records the outcome. Nothing is pickled by reference, and the remote environment only
+needs `lamindb`. Their step runs reference the Airflow task instance log URL
+(`reference_type="airflow_task_instance"`).
 
 ## Notes
 
@@ -104,11 +143,19 @@ environment only needs `lamindb`.
 ## Tests
 
 ```bash
-pytest                                   # unit tests, lamindb mocked
-lamin init --storage ./test-store --name airflowtest
-LAMINDB_INTEGRATION_TEST=1 pytest tests/test_lamin_integration.py   # operators against a real instance
+pytest tests/unit                        # lamindb mocked
+
+# use a throwaway instance: keep ~/.lamin away from your real settings
+export HOME=/tmp/lamin-home
+lamin init --storage /tmp/lamin-home/store --name airflowtest
+LAMINDB_INTEGRATION_TEST=1 pytest tests/integration   # operators against a real instance
 
 export AIRFLOW_HOME=/tmp/airflow-e2e AIRFLOW__CORE__LOAD_EXAMPLES=False
+export AIRFLOW__CORE__DAGS_FOLDER=$PWD/tests/system
 airflow db migrate
-LAMINDB_E2E_TEST=1 pytest tests/test_e2e_dag_test.py                # dag.test(): real task runner + virtualenv
+LAMINDB_E2E_TEST=1 pytest tests/system             # dag.test(): real task runner + virtualenv
 ```
+
+## License
+
+MIT

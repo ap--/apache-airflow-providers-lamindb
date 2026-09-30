@@ -1,46 +1,76 @@
 [build-system]
-requires = ["setuptools>=61.0", "wheel"]
-build-backend = "setuptools.build_meta"
+requires = ["flit_core>=3.12,<5"]
+build-backend = "flit_core.buildapi"
 
 [project]
-name = "lamin-airflow"
+name = "lamindb-airflow"
 version = "0.1.0"
-description = "Apache Airflow 3 provider to map DAG runs to LaminDB flows and tasks to steps."
+description = "Apache Airflow 3 provider that maps DAG runs to LaminDB flows and tasks to steps."
 readme = "README.md"
-requires-python = ">=3.10"
-license = { text = "Apache-2.0" }
-keywords = ["airflow", "airflow-provider", "lamindb", "lamin"]
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "Dan Plischke" }]
+keywords = ["airflow-provider", "lamindb", "airflow", "integration"]
 classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
     "Framework :: Apache Airflow",
     "Framework :: Apache Airflow :: Provider",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
 ]
-
+requires-python = ">=3.10"
 dependencies = [
     "apache-airflow>=3.0",
-    "lamindb",
+    "apache-airflow-providers-standard",
 ]
 
 [project.optional-dependencies]
+# Only the in-process operators need lamindb on the worker; the venv/k8s variants install it remotely.
+"lamindb" = [
+    "lamindb",
+]
+"cncf.kubernetes" = [
+    "apache-airflow-providers-cncf-kubernetes",
+]
+
+[dependency-groups]
 dev = [
+    "lamindb-airflow[lamindb,cncf.kubernetes]",
     "pytest>=7.0",
     "pytest-cov>=4.0",
     "ruff>=0.8",
 ]
-kubernetes = [
-    "apache-airflow-providers-cncf-kubernetes",
-]
+
+[project.urls]
+"Source Code" = "https://github.com/danplischke/apache-airflow-providers-lamindb"
+"Bug Tracker" = "https://github.com/danplischke/apache-airflow-providers-lamindb/issues"
 
 [project.entry-points."apache_airflow_provider"]
-provider_info = "lamin_airflow.get_provider_info:get_provider_info"
+provider_info = "lamindb_airflow.get_provider_info:get_provider_info"
 
-[tool.setuptools.packages.find]
-where = ["."]
-include = ["lamin_airflow*"]
+[tool.flit.module]
+name = "lamindb_airflow"
+
+[tool.flit.sdist]
+include = [
+    "docs/",
+    "provider.yaml",
+    "tests/",
+]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-pythonpath = ["."]
+addopts = "--import-mode=importlib"
 
 [tool.ruff]
 line-length = 120
 target-version = "py310"
+
+[tool.ruff.lint.per-file-ignores]
+# tests exec generated sources the way the virtualenv/pod script does
+"tests/**" = ["S102"]
