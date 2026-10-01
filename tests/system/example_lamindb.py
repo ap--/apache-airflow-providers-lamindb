@@ -3,8 +3,8 @@
 import lamindb as ln
 from airflow.sdk import DAG, task
 
-from lamindb_airflow.operators.flow import LaminDBFlowFinishOperator, LaminDBFlowInitOperator
-from lamindb_airflow.operators.step import LaminDBStepOperator
+from airflow.providers.lamindb.operators.flow import LaminDBFlowFinishOperator, LaminDBFlowInitOperator
+from airflow.providers.lamindb.operators.step import LaminDBStepOperator
 
 
 def extract(count: int = 10) -> dict:

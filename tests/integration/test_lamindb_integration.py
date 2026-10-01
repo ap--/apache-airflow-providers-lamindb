@@ -93,7 +93,7 @@ def run_script(script: str, tmp_path) -> str:
 def test_is_lamindb_tracked_detects_ln_step() -> None:
     import lamindb as ln
 
-    from lamindb_airflow.utils.context import is_lamindb_tracked
+    from airflow.providers.lamindb.utils.context import is_lamindb_tracked
 
     def plain() -> None: ...
 
@@ -105,7 +105,7 @@ def test_is_lamindb_tracked_detects_ln_step() -> None:
 def test_flow_and_steps_end_to_end(dag_module, run_id):
     import lamindb as ln
 
-    from lamindb_airflow import LaminDBFlowFinishOperator, LaminDBFlowInitOperator, LaminDBStepOperator
+    from airflow.providers.lamindb import LaminDBFlowFinishOperator, LaminDBFlowInitOperator, LaminDBStepOperator
 
     init = LaminDBFlowInitOperator()
     flow_uid = init.execute(make_context(dag_module, run_id, init.task_id))
@@ -151,7 +151,7 @@ def test_flow_and_steps_end_to_end(dag_module, run_id):
 def test_init_is_idempotent_per_dag_run(dag_module, run_id):
     import lamindb as ln
 
-    from lamindb_airflow import LaminDBFlowFinishOperator, LaminDBFlowInitOperator
+    from airflow.providers.lamindb import LaminDBFlowFinishOperator, LaminDBFlowInitOperator
 
     init = LaminDBFlowInitOperator()
     first = init.execute(make_context(dag_module, run_id, init.task_id))
@@ -168,7 +168,7 @@ def test_init_is_idempotent_per_dag_run(dag_module, run_id):
 def test_step_without_init_raises(dag_module, run_id):
     from airflow.exceptions import AirflowException
 
-    from lamindb_airflow import LaminDBStepOperator
+    from airflow.providers.lamindb import LaminDBStepOperator
 
     step = LaminDBStepOperator(task_id="extract", python_callable=dag_module.extract)
     with pytest.raises(AirflowException, match="No LaminDB flow run"):
@@ -179,8 +179,12 @@ def test_remote_sources_run_in_fresh_interpreter(dag_module, run_id, tmp_path):
     """The source shipped to a venv/pod must work with only lamindb installed."""
     import lamindb as ln
 
-    from lamindb_airflow.utils.dag_run import dag_source, flow_run_params
-    from lamindb_airflow.utils.remote import build_remote_flow_source, build_remote_step_source, worker_instance_slug
+    from airflow.providers.lamindb.utils.dag_run import dag_source, flow_run_params
+    from airflow.providers.lamindb.utils.remote import (
+        build_remote_flow_source,
+        build_remote_step_source,
+        worker_instance_slug,
+    )
 
     instance = worker_instance_slug()
     reference = f"integration_dag/{run_id}"

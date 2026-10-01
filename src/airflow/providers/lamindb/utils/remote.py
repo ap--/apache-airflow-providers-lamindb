@@ -2,7 +2,7 @@
 
 Airflow's virtualenv and Kubernetes operators ship the callable's *source text* to
 the remote interpreter and call it by name. We keep that mechanism: the shipped
-script embeds :mod:`lamindb_airflow.utils.runtime` as source and calls into it.
+script embeds :mod:`airflow.providers.lamindb.utils.runtime` as source and calls into it.
 Only ``lamindb`` has to be installed remotely; nothing is pickled by reference.
 """
 
@@ -14,8 +14,8 @@ import re
 from importlib.metadata import PackageNotFoundError, version
 from typing import Any
 
-from lamindb_airflow.utils import runtime
-from lamindb_airflow.utils.dag_run import context_flow_run_reference, dag_source, task_instance_url
+from airflow.providers.lamindb.utils import runtime
+from airflow.providers.lamindb.utils.dag_run import context_flow_run_reference, dag_source, task_instance_url
 
 _LAMINDB_REQUIREMENT = re.compile(r"^\s*lamindb\s*($|[\[<>=!~;@\s])", re.IGNORECASE)
 

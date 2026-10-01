@@ -7,7 +7,7 @@ from typing import Any
 
 from airflow.sdk.bases.decorator import DecoratedOperator, task_decorator_factory
 
-from lamindb_airflow.operators.step import LaminDBStepOperator
+from airflow.providers.lamindb.operators.step import LaminDBStepOperator
 
 
 class LaminDBDecoratedOperator(DecoratedOperator, LaminDBStepOperator):  # type: ignore[misc]

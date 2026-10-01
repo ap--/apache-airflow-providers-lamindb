@@ -5,8 +5,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from lamindb_airflow.utils import remote
-from lamindb_airflow.utils.remote import (
+from airflow.providers.lamindb.utils import remote
+from airflow.providers.lamindb.utils.remote import (
     add_lamindb_requirement,
     build_remote_flow_source,
     build_remote_step_source,

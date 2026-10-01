@@ -6,7 +6,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from lamindb_airflow.utils import runtime
+from airflow.providers.lamindb.utils import runtime
 
 
 def test_runtime_is_self_contained() -> None:

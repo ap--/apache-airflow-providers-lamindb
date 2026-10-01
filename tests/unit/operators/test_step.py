@@ -5,8 +5,8 @@ from unittest.mock import MagicMock
 import pytest
 from airflow.exceptions import AirflowException
 
-from lamindb_airflow.operators.step import LaminDBStepOperator
-from lamindb_airflow.utils.context import flow_run_context
+from airflow.providers.lamindb.operators.step import LaminDBStepOperator
+from airflow.providers.lamindb.utils.context import flow_run_context
 
 
 def test_step_operator_runs_callable_as_step_of_flow_run(fake_lamindb: MagicMock, make_context) -> None:

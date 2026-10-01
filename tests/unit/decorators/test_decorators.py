@@ -6,7 +6,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 from airflow.sdk import dag, task
 
-from lamindb_airflow.utils import remote
+from airflow.providers.lamindb.utils import remote
 
 
 def _single_task(decorator, fn):

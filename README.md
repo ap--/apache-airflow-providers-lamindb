@@ -37,7 +37,7 @@ Tested end to end with Airflow 3.3.2 + lamindb 2.10.0.
 import lamindb as ln
 from airflow.sdk import DAG, task
 
-from lamindb_airflow import LaminDBStepOperator
+from airflow.providers.lamindb import LaminDBStepOperator
 
 
 def extract(count: int = 10) -> dict:
@@ -71,7 +71,7 @@ and wires `init >> step >> finish` (`auto_flow=True`). To configure them, declar
 yourself before the steps; they are reused:
 
 ```python
-from lamindb_airflow import LaminDBFlowFinishOperator, LaminDBFlowInitOperator
+from airflow.providers.lamindb import LaminDBFlowFinishOperator, LaminDBFlowInitOperator
 
 with DAG("my_pipeline") as dag:
     init = LaminDBFlowInitOperator(retries=3)

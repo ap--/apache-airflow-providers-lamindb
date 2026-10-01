@@ -4,7 +4,7 @@ from importlib.metadata import version
 
 from airflow.sdk import DAG, TaskGroup, task
 
-from lamindb_airflow.operators import (
+from airflow.providers.lamindb.operators import (
     LaminDBFlowFinishOperator,
     LaminDBFlowInitOperator,
     LaminDBStepOperator,

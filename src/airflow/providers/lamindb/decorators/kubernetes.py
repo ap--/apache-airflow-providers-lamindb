@@ -7,8 +7,8 @@ from typing import Any
 
 from airflow.sdk.bases.decorator import task_decorator_factory
 
-from lamindb_airflow.operators.flow import wire_flow_tasks
-from lamindb_airflow.utils.remote import RemoteLaminDBStepMixin
+from airflow.providers.lamindb.operators.flow import wire_flow_tasks
+from airflow.providers.lamindb.utils.remote import RemoteLaminDBStepMixin
 
 
 def _lamindb_k8s_decorated_operator_class() -> type:

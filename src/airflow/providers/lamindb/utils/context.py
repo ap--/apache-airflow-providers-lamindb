@@ -8,8 +8,8 @@ from typing import TYPE_CHECKING, Any
 
 from airflow.exceptions import AirflowException
 
-from lamindb_airflow.utils import runtime
-from lamindb_airflow.utils.dag_run import context_flow_run_reference, dag_and_run_id, flow_run_params
+from airflow.providers.lamindb.utils import runtime
+from airflow.providers.lamindb.utils.dag_run import context_flow_run_reference, dag_and_run_id, flow_run_params
 
 if TYPE_CHECKING:
     from lamindb import Run
