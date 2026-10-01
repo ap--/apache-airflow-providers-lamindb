@@ -53,6 +53,14 @@ def dag_module(tmp_path_factory):
     return module
 
 
+@pytest.fixture(scope="module")
+def instance() -> str:
+    """The test instance; remote interpreters run elsewhere and can't find it by directory."""
+    import lamindb_setup
+
+    return lamindb_setup.settings.instance.slug
+
+
 @pytest.fixture
 def run_id():
     import secrets
@@ -134,12 +142,11 @@ def test_step_without_flow_run_raises(dag_module, run_id):
         runtime.run_step(dag_module.extract, (), {}, f"integration_dag/{run_id}", dag_source(dag_module.dag))
 
 
-def test_failed_remote_step_marks_step_and_flow_errored(dag_module, run_id, tmp_path):
+def test_failed_remote_step_marks_step_and_flow_errored(dag_module, run_id, instance, tmp_path):
     import lamindb as ln
 
     from airflow.providers.lamindb.utils import runtime
     from airflow.providers.lamindb.utils.dag_run import dag_source
-    from airflow.providers.lamindb.utils.remote import worker_instance_slug
 
     kwargs = start_flow_run_kwargs(dag_module, run_id)
     flow_run = runtime.start_flow_run(**kwargs)
@@ -152,7 +159,7 @@ def test_failed_remote_step_marks_step_and_flow_errored(dag_module, run_id, tmp_
             "flow_run_reference": kwargs["reference"],
             "source_code": dag_source(dag_module.dag),
             "step_reference": "http://airflow/ti",
-            "instance": worker_instance_slug(),
+            "instance": instance,
         },
     )
     assert "ValueError: step failed" in run_script(script, tmp_path, succeed=False).stderr
@@ -164,14 +171,13 @@ def test_failed_remote_step_marks_step_and_flow_errored(dag_module, run_id, tmp_
     assert flow_run.finished_at is not None
 
 
-def test_remote_sources_run_in_fresh_interpreter(dag_module, run_id, tmp_path):
+def test_remote_sources_run_in_fresh_interpreter(dag_module, run_id, instance, tmp_path):
     """The source shipped to a venv/pod must work with only lamindb installed."""
     import lamindb as ln
 
     from airflow.providers.lamindb.utils.dag_run import dag_source
-    from airflow.providers.lamindb.utils.remote import build_remote_flow_source, worker_instance_slug
+    from airflow.providers.lamindb.utils.remote import build_remote_flow_source
 
-    instance = worker_instance_slug()
     reference = f"integration_dag/{run_id}"
 
     def flow_script(runtime_function: str, config: dict) -> str:

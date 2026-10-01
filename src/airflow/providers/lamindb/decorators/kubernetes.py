@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any
 
+from airflow.providers.lamindb.hooks.lamindb import LaminDBHook
 from airflow.providers.lamindb.operators.flow import wire_flow_tasks
 from airflow.providers.lamindb.utils.remote import RemoteLaminDBStepMixin
 from airflow.sdk.bases.decorator import task_decorator_factory
@@ -18,11 +19,20 @@ def _lamindb_k8s_decorated_operator_class() -> type:
 
         custom_operator_name = "@task.lamindb_k8s"
 
-        # BaseOperatorMeta expects the most-derived class to define __init__
-        def __init__(self, **kwargs: Any) -> None:
-            super().__init__(**kwargs)
+        # BaseOperatorMeta expects the most-derived class to define __init__; the lamindb
+        # arguments are repeated here so that DAG default_args reach them
+        def __init__(
+            self,
+            *,
+            lamindb_conn_id: str | None = LaminDBHook.default_conn_name,
+            lamindb_instance: str | None = None,
+            **kwargs: Any,
+        ) -> None:
+            super().__init__(lamindb_conn_id=lamindb_conn_id, lamindb_instance=lamindb_instance, **kwargs)
             if self.auto_flow:
-                wire_flow_tasks(self, lamindb_instance=self.lamindb_instance)
+                wire_flow_tasks(
+                    self, lamindb_conn_id=self.lamindb_conn_id, lamindb_instance=self.lamindb_instance
+                )
 
     return LaminDBK8sDecoratedOperator
 
@@ -34,13 +44,14 @@ def lamindb_k8s_task(
 ):
     """``@task.lamindb_k8s``: run the function as a LaminDB step in a Kubernetes pod.
 
-    Accepts every ``@task.kubernetes`` argument, plus ``lamindb_instance`` (instance
-    slug to connect to), ``auto_flow`` (wire virtualenv flow operators on the
-    worker if the DAG has none yet; default ``True``) and ``track`` (record the call
-    in LaminDB; with ``False`` it runs exactly as under ``@task.kubernetes``). The image
-    must have ``lamindb`` installed and credentials for the instance, e.g.
-    ``LAMIN_API_KEY`` from a Kubernetes secret. The worker needs no lamindb. Requires
-    ``pip install "lamindb-airflow[cncf.kubernetes]"``.
+    Accepts every ``@task.kubernetes`` argument, plus ``lamindb_conn_id`` (Airflow
+    connection of type ``lamindb``; the pod only gets its instance, not its API key),
+    ``lamindb_instance`` (instance slug; overrides the connection's), ``auto_flow`` (wire
+    flow operators, which run in a virtualenv on the worker, if the DAG has none yet;
+    default ``True``) and ``track`` (record the call in LaminDB; with ``False`` it runs
+    exactly as under ``@task.kubernetes``). The image must have lamindb installed and
+    credentials for the instance, e.g. ``LAMIN_API_KEY`` from a Kubernetes secret. The
+    worker needs no lamindb. Requires ``pip install "lamindb-airflow[cncf.kubernetes]"``.
     """
     try:
         operator_class = _lamindb_k8s_decorated_operator_class()

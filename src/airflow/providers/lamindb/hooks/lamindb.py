@@ -433,6 +433,15 @@ class LaminDBHook(BaseHook):
 
     # -- synchronous API ---------------------------------------------------------------------------
 
+    def get_instance_slug(self) -> str:
+        """Return the configured instance ``owner/name`` without contacting LaminHub."""
+        config = self._get_config()
+        return f"{config.owner}/{config.name}"
+
+    def get_api_key(self) -> str | None:
+        """Return the connection's Lamin API key, or ``None`` for anonymous access."""
+        return self._get_config().api_key
+
     def get_instance(self) -> LaminDBInstance:
         """Return the configured instance (resolves its id and regional API URL on first use)."""
         if self._instance is None:

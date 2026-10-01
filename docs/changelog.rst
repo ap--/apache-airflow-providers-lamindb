@@ -7,10 +7,13 @@ Changelog
 Initial release.
 
 * Lineage: DAG runs are recorded as LaminDB flow runs and tasks as steps with
-  ``LaminDBVenvFlowInitOperator``, ``LaminDBVenvFlowFinishOperator`` and the ``@task.lamindb_venv`` and
+  ``LaminDBFlowInitOperator``, ``LaminDBFlowFinishOperator`` and the ``@task.lamindb_venv`` and
   ``@task.lamindb_k8s`` decorators. LaminDB runs in a virtualenv or a Kubernetes pod, never on the
-  worker.
-* ``LaminDBHook`` and the ``lamindb`` connection type for the LaminHub REST API.
+  worker. The virtualenvs install ``lamindb-core`` in the instance's version and get their
+  credentials from the ``lamindb`` connection. ``LaminDBVenvFlowInitOperator`` and
+  ``LaminDBVenvFlowFinishOperator`` are deprecated aliases.
+* ``LaminDBHook`` and the ``lamindb`` connection type for the LaminHub REST API, shared by all
+  operators, triggers and sensors.
 * Event triggers for event-driven scheduling based on the LaminHub database write log, with
   cursors in the asset state store: ``LaminDBRecordEventTrigger``, ``LaminDBArtifactEventTrigger``,
   ``LaminDBBranchStatusEventTrigger`` and ``LaminDBBranchBlockEventTrigger``.

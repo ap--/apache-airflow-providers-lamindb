@@ -1,9 +1,10 @@
 from __future__ import annotations
 
-from importlib.metadata import version
+import os
 from unittest.mock import MagicMock, patch
 
 import pytest
+from airflow.exceptions import AirflowException
 from airflow.sdk import dag, task
 
 from airflow.providers.lamindb.utils import remote
@@ -45,39 +46,84 @@ def test_task_lamindb_venv_keeps_xcom_args_and_dependencies() -> None:
     assert len(consume_op.op_args) == 1
 
 
-def test_task_lamindb_venv_adds_lamindb_requirement() -> None:
-    op = _single_task(task.lamindb_venv(requirements=["pandas"]), step)
+def test_task_lamindb_venv_builds_operator() -> None:
+    op = _single_task(task.lamindb_venv(requirements=["pandas"], lamindb_version="2.9.0"), step)
     assert type(op).__name__ == "LaminDBVenvDecoratedOperator"
     assert op.custom_operator_name == "@task.lamindb_venv"
-    assert op.requirements == ["pandas", f"lamindb=={version('lamindb')}"]
-    assert _single_task(task.lamindb_venv(lamindb_version="1.0"), step).requirements == ["lamindb==1.0"]
+    assert op.requirements == ["pandas"]  # lamindb is added when the task runs
+    assert op.lamindb_version == "2.9.0"
+    assert op.lamindb_conn_id == "lamindb_default"
 
 
-def test_remote_step_ships_wrapped_source_only_during_execute(fake_lamindb: MagicMock, make_context) -> None:
-    fake_lamindb.flow_run = MagicMock(uid="flowuid")
-    op = _single_task(task.lamindb_venv, step)
-    plain = op.get_python_source()
-    assert plain.startswith("def step():")
-    assert "_lamindb_airflow_step" not in plain
+def _execute_in_fake_venv(op, context):
+    """Execute the step, but exec its shipped source here instead of in a virtualenv."""
+    seen: dict = {}
 
     def fake_venv_execute(self, context):
+        seen["requirements"] = list(self.requirements)
+        seen["env_vars"] = dict(self.env_vars or {})
+        seen["settings_dir_existed"] = os.path.isdir(seen["env_vars"].get("LAMIN_SETTINGS_DIR", ""))
         namespace: dict = {}
         exec(self.get_python_source(), namespace)
         return namespace["step"]()
 
     with (
         patch.object(remote, "dag_source", return_value="# dag source"),
-        patch.object(remote, "worker_instance_slug", return_value="owner/worker"),
         patch.object(type(op).__mro__[2], "execute", fake_venv_execute),
     ):
-        assert op.execute(make_context()) == 1
+        return op.execute(context), seen
 
-    fake_lamindb.connect.assert_called_once_with("owner/worker")
+
+def test_remote_step_ships_wrapped_source_only_during_execute(
+    fake_lamindb: MagicMock, make_context, lamindb_connection
+) -> None:
+    fake_lamindb.flow_run = MagicMock(uid="flowuid")
+    op = _single_task(task.lamindb_venv(requirements=["pandas"]), step)
+    plain = op.get_python_source()
+    assert plain.startswith("def step():")
+    assert "_lamindb_airflow_step" not in plain
+    context = make_context()
+    context["ti"].xcom_pull.return_value = "owner/name"  # instance of the flow run
+
+    result, seen = _execute_in_fake_venv(op, context)
+
+    assert result == 1
+    fake_lamindb.connect.assert_called_once_with("owner/name")
     kwargs = fake_lamindb.track.call_args.kwargs
     assert kwargs["source_code"] == "# dag source"
     assert kwargs["entrypoint"] == "step"
     assert kwargs["initiated_by_run"] is fake_lamindb.flow_run
     assert op.get_python_source() == plain
+    assert seen["requirements"] == ["pandas", "lamindb-core==2.10.0", "numpy", "pandera>=0.24.0"]
+    assert seen["env_vars"]["LAMIN_API_KEY"] == "api-key"
+    assert seen["settings_dir_existed"]
+    assert op.env_vars is None
+
+
+def test_step_on_another_instance_than_the_flow_run_fails_early(
+    fake_lamindb: MagicMock, make_context, lamindb_connection
+) -> None:
+    op = _single_task(task.lamindb_venv(lamindb_instance="owner/other"), step)
+    context = make_context()
+    context["ti"].xcom_pull.return_value = "owner/name"
+
+    with pytest.raises(
+        AirflowException, match="'owner/other', but the flow run of this DAG run is in 'owner/name'"
+    ):
+        _execute_in_fake_venv(op, context)
+    context["ti"].xcom_pull.assert_called_once_with(task_ids="lamindb_flow_init", key="lamindb_instance")
+    fake_lamindb.track.assert_not_called()
+
+
+def test_step_without_connection_uses_lamindb_configuration(fake_lamindb: MagicMock, make_context) -> None:
+    fake_lamindb.flow_run = MagicMock(uid="flowuid")
+    op = _single_task(task.lamindb_venv(lamindb_conn_id=None), step)
+
+    result, seen = _execute_in_fake_venv(op, make_context())
+    assert result == 1
+    fake_lamindb.connect.assert_not_called()
+    assert seen["env_vars"] == {}
+    assert seen["requirements"][0] == "lamindb-core"
 
 
 def test_untracked_steps_are_plain_tasks() -> None:
@@ -110,3 +156,27 @@ def test_task_lamindb_k8s_builds_operator() -> None:
     assert type(op).__name__ == "LaminDBK8sDecoratedOperator"
     assert op.custom_operator_name == "@task.lamindb_k8s"
     assert op.lamindb_instance == "owner/name"
+    assert op.lamindb_conn_id == "lamindb_default"
+
+
+def test_task_lamindb_k8s_gets_only_the_instance_from_the_connection(
+    fake_lamindb: MagicMock, make_context, lamindb_connection
+) -> None:
+    pytest.importorskip("airflow.providers.cncf.kubernetes")
+    op = _single_task(task.lamindb_k8s(image="python:3.12"), step)
+    context = make_context()
+    context["ti"].xcom_pull.return_value = None  # flow run instance unknown: no check
+    seen = {}
+
+    def fake_pod_execute(self, context):
+        seen["source"] = self.get_python_source()
+        seen["env_vars"] = self.env_vars
+
+    with (
+        patch.object(remote, "dag_source", return_value="# dag source"),
+        patch.object(type(op).__mro__[2], "execute", fake_pod_execute),
+    ):
+        op.execute(context)
+
+    assert "'instance': 'owner/name'" in seen["source"]
+    assert "api-key" not in repr(seen)  # the pod's credentials come from a Kubernetes secret

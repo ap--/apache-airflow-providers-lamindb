@@ -1,15 +1,20 @@
 from __future__ import annotations
 
-from importlib.metadata import PackageNotFoundError
-from unittest.mock import MagicMock, patch
+import json
+import os
+from unittest.mock import MagicMock
 
 import pytest
+import respx
 
-from airflow.providers.lamindb.utils import remote
+from airflow.providers.lamindb.hooks.lamindb import DEFAULT_HUB_API_URL
 from airflow.providers.lamindb.utils.remote import (
+    RemoteLaminDB,
     add_lamindb_requirement,
     build_remote_flow_source,
     build_remote_step_source,
+    lamindb_requirements,
+    lamindb_virtualenv_env,
 )
 
 CONFIG = {
@@ -64,34 +69,86 @@ def test_remote_flow_source_calls_runtime_and_returns_run_uid(fake_lamindb: Magi
     assert flow_run._status_code == 1
 
 
+CORE_COMPANIONS = ["numpy", "pandas>=2.0.0", "pandera>=0.24.0"]
+
+
 @pytest.mark.parametrize(
     ("requirements", "expected"),
     [
-        (["pandas"], ["pandas", "lamindb==9.9"]),
+        (["scanpy"], ["scanpy", "lamindb-core==9.9", *CORE_COMPANIONS]),
+        (["pandas==2.2"], ["pandas==2.2", "lamindb-core==9.9", "numpy", "pandera>=0.24.0"]),
         (["lamindb"], ["lamindb"]),
         (["lamindb[bionty]>=1"], ["lamindb[bionty]>=1"]),
         (["LaminDB==1.0"], ["LaminDB==1.0"]),
-        (["lamindb_setup"], ["lamindb_setup", "lamindb==9.9"]),
-        (["lamindb-airflow"], ["lamindb-airflow", "lamindb==9.9"]),
+        (["lamindb-core==2.8.0"], ["lamindb-core==2.8.0", *CORE_COMPANIONS]),
+        (["lamindb_core", "Pandas"], ["lamindb_core", "Pandas", "numpy", "pandera>=0.24.0"]),
+        (["lamindb_setup"], ["lamindb_setup", "lamindb-core==9.9", *CORE_COMPANIONS]),
+        (["lamindb-airflow"], ["lamindb-airflow", "lamindb-core==9.9", *CORE_COMPANIONS]),
     ],
 )
 def test_add_lamindb_requirement(requirements: list[str], expected: list[str]) -> None:
-    with patch.object(remote, "worker_lamindb_version", return_value="9.9"):
-        add_lamindb_requirement(requirements)
+    add_lamindb_requirement(requirements, "9.9")
     assert requirements == expected
 
 
-def test_add_lamindb_requirement_prefers_explicit_version_then_unpinned() -> None:
-    requirements: list[str] = []
-    add_lamindb_requirement(requirements, "1.2.3")
-    assert requirements == ["lamindb==1.2.3"]
+@pytest.mark.parametrize(
+    ("version", "expected"),
+    [
+        (None, ["lamindb-core", *CORE_COMPANIONS]),
+        ("2.6.1", ["lamindb-core==2.6.1", *CORE_COMPANIONS]),
+        ("2.6.0", ["lamindb==2.6.0"]),  # before lamindb-core was published
+        ("1.0", ["lamindb==1.0"]),
+    ],
+)
+def test_lamindb_requirements(version: str | None, expected: list[str]) -> None:
+    assert lamindb_requirements(version) == expected
 
-    requirements = []
-    with patch.object(remote, "version", side_effect=PackageNotFoundError):
-        add_lamindb_requirement(requirements)
-    assert requirements == ["lamindb"]
+
+@pytest.fixture
+def connection(monkeypatch):
+    conn = {"conn_type": "lamindb", "password": "api-key", "extra": {"instance": "owner/name"}}
+    monkeypatch.setenv("AIRFLOW_CONN_LAMINDB_TEST", json.dumps(conn))
 
 
-def test_worker_instance_slug_without_lamindb(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(remote.importlib.util, "find_spec", lambda name: None)
-    assert remote.worker_instance_slug() is None
+def test_remote_lamindb_from_connection(connection) -> None:
+    remote_lamindb = RemoteLaminDB.resolve("lamindb_test", None)
+    assert (remote_lamindb.instance, remote_lamindb.api_key) == ("owner/name", "api-key")
+    assert "api-key" not in repr(remote_lamindb)
+    assert RemoteLaminDB.resolve("lamindb_test", "owner/other").instance == "owner/other"
+
+
+def test_remote_lamindb_without_connection() -> None:
+    assert RemoteLaminDB.resolve(None, None) == RemoteLaminDB(conn_id=None, instance=None)
+    assert RemoteLaminDB.resolve(None, "owner/name").instance == "owner/name"
+    assert RemoteLaminDB(conn_id=None, instance="owner/name").instance_lamindb_version() is None
+
+
+def test_instance_lamindb_version_from_laminhub(connection) -> None:
+    settings_url = f"{DEFAULT_HUB_API_URL}/instances/owner/name/settings"
+    settings = {"id": "abc", "api_url": "https://api.example.com", "lamindb_version": "2.9.0"}
+    with respx.mock() as router:
+        router.post(f"{DEFAULT_HUB_API_URL}/account/jwt").respond(json={"accessToken": "token"})
+        router.get(settings_url).respond(json=settings)
+        assert RemoteLaminDB.resolve("lamindb_test", None).instance_lamindb_version() == "2.9.0"
+
+
+def test_instance_lamindb_version_falls_back_to_latest(connection, caplog) -> None:
+    with respx.mock() as router:
+        router.post(f"{DEFAULT_HUB_API_URL}/account/jwt").respond(json={"accessToken": "token"})
+        router.get(f"{DEFAULT_HUB_API_URL}/instances/owner/name/settings").respond(404)
+        assert RemoteLaminDB.resolve("lamindb_test", None).instance_lamindb_version() is None
+    assert "Could not look up the lamindb version of owner/name" in caplog.text
+
+
+def test_lamindb_virtualenv_env_isolates_settings() -> None:
+    op = MagicMock(env_vars={"OTHER": "1"})
+    with lamindb_virtualenv_env(op, RemoteLaminDB(conn_id="c", instance="o/n", api_key="key")):
+        env = dict(op.env_vars)
+        assert os.path.isdir(env["LAMIN_SETTINGS_DIR"])
+    assert env["LAMIN_API_KEY"] == "key"
+    assert env["OTHER"] == "1"
+    assert not os.path.exists(env["LAMIN_SETTINGS_DIR"])
+    assert op.env_vars == {"OTHER": "1"}
+
+    with lamindb_virtualenv_env(op, RemoteLaminDB(conn_id=None, instance=None)):
+        assert op.env_vars == {"OTHER": "1"}

@@ -12,8 +12,8 @@ import packaging.version
 from airflow import __version__ as airflow_version  # type: ignore[attr-defined]
 
 __all__ = [
-    "LaminDBVenvFlowFinishOperator",
-    "LaminDBVenvFlowInitOperator",
+    "LaminDBFlowFinishOperator",
+    "LaminDBFlowInitOperator",
     "__version__",
 ]
 
@@ -32,4 +32,8 @@ def __getattr__(name: str) -> Any:
         from airflow.providers.lamindb import operators
 
         return getattr(operators, name)
+    if name in ("LaminDBVenvFlowInitOperator", "LaminDBVenvFlowFinishOperator"):
+        from airflow.providers.lamindb.operators.flow import deprecated_alias
+
+        return deprecated_alias(name)
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

@@ -4,12 +4,11 @@ from __future__ import annotations
 
 import subprocess
 import sys
-from importlib.metadata import PackageNotFoundError
 from unittest.mock import MagicMock
 
 import pytest
 
-from airflow.providers.lamindb.operators.flow import LaminDBVenvFlowInitOperator
+from airflow.providers.lamindb.operators.flow import LaminDBFlowInitOperator
 from airflow.providers.lamindb.utils import remote
 
 
@@ -17,11 +16,6 @@ from airflow.providers.lamindb.utils import remote
 def no_lamindb(monkeypatch: pytest.MonkeyPatch) -> None:
     for name in ("lamindb", "lamindb_setup"):
         monkeypatch.setitem(sys.modules, name, None)  # makes `import lamindb` raise ImportError
-
-    def not_installed(name: str) -> str:
-        raise PackageNotFoundError(name)
-
-    monkeypatch.setattr(remote, "version", not_installed)
 
 
 def test_import_does_not_need_lamindb() -> None:
@@ -35,9 +29,9 @@ def test_import_does_not_need_lamindb() -> None:
     subprocess.run([sys.executable, "-c", code], check=True)
 
 
+@pytest.mark.usefixtures("lamindb_connection")
 def test_venv_operator_works_without_lamindb_on_worker(no_lamindb: None, make_context) -> None:
-    op = LaminDBVenvFlowInitOperator()
-    assert op.requirements == ["lamindb"]
+    op = LaminDBFlowInitOperator()
 
     captured = {}
 
@@ -51,8 +45,9 @@ def test_venv_operator_works_without_lamindb_on_worker(no_lamindb: None, make_co
         mp.setattr(PythonVirtualenvOperator, "execute", fake_venv_execute)
         op.execute(make_context())
 
-    assert captured["op_kwargs"]["lamindb_airflow_config"]["instance"] is None
+    assert captured["op_kwargs"]["lamindb_airflow_config"]["instance"] == "owner/name"
     assert "def lamindb_airflow_flow_task(lamindb_airflow_config):" in captured["source"]
+    assert op.requirements[0] == "lamindb-core==2.10.0"
 
 
 def test_venv_step_works_without_lamindb_on_worker(no_lamindb: None, make_context) -> None:
@@ -60,16 +55,16 @@ def test_venv_step_works_without_lamindb_on_worker(no_lamindb: None, make_contex
 
     @dag
     def test_dag():
-        @task.lamindb_venv
+        @task.lamindb_venv(lamindb_conn_id=None)
         def step():
             return 1
 
         step()
 
     op = test_dag().get_task("step")
-    assert op.requirements == ["lamindb"]
     with pytest.MonkeyPatch.context() as mp:
         mp.setattr(remote, "dag_source", MagicMock(return_value="# dag"))
         mp.setattr(type(op).__mro__[2], "execute", lambda self, context: self.get_python_source())
         source = op.execute(make_context())
     assert "'instance': None" in source
+    assert op.requirements[0] == "lamindb-core"

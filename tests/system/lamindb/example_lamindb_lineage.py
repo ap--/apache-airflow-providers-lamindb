@@ -9,14 +9,14 @@ from __future__ import annotations
 from airflow.sdk import DAG, task
 
 from airflow.providers.lamindb.operators.flow import (
-    LaminDBVenvFlowFinishOperator,
-    LaminDBVenvFlowInitOperator,
+    LaminDBFlowFinishOperator,
+    LaminDBFlowInitOperator,
 )
 
 # Flow init/finish declared explicitly to configure them; the steps reuse them.
 with DAG("lamindb_example_ok") as dag_ok:
-    LaminDBVenvFlowInitOperator(system_site_packages=True)
-    LaminDBVenvFlowFinishOperator(system_site_packages=True)
+    LaminDBFlowInitOperator(system_site_packages=True)
+    LaminDBFlowFinishOperator(system_site_packages=True)
 
     @task.lamindb_venv(system_site_packages=True)
     def extract(count: int = 10) -> dict:
