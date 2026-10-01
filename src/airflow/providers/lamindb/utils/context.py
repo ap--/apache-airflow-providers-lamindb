@@ -7,7 +7,6 @@ from contextlib import contextmanager
 from typing import TYPE_CHECKING, Any
 
 from airflow.exceptions import AirflowException
-
 from airflow.providers.lamindb.utils import runtime
 from airflow.providers.lamindb.utils.dag_run import context_flow_run_reference, dag_and_run_id, flow_run_params
 

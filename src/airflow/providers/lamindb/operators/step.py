@@ -5,9 +5,8 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping, Sequence
 from typing import Any
 
-from airflow.sdk import BaseOperator
-
 from airflow.providers.lamindb.operators.flow import wire_flow_tasks
+from airflow.sdk import BaseOperator
 
 
 class LaminDBStepOperator(BaseOperator):

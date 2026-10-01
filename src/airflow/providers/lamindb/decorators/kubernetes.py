@@ -5,10 +5,9 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any
 
-from airflow.sdk.bases.decorator import task_decorator_factory
-
 from airflow.providers.lamindb.operators.flow import wire_flow_tasks
 from airflow.providers.lamindb.utils.remote import RemoteLaminDBStepMixin
+from airflow.sdk.bases.decorator import task_decorator_factory
 
 
 def _lamindb_k8s_decorated_operator_class() -> type:

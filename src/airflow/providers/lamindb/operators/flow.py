@@ -4,9 +4,6 @@ from __future__ import annotations
 
 from typing import Any
 
-from airflow.providers.standard.operators.python import PythonVirtualenvOperator
-from airflow.sdk import BaseOperator, TriggerRule
-
 from airflow.providers.lamindb.utils.dag_run import (
     context_flow_run_reference,
     dag_and_run_id,
@@ -18,6 +15,8 @@ from airflow.providers.lamindb.utils.remote import (
     build_remote_flow_source,
     worker_instance_slug,
 )
+from airflow.providers.standard.operators.python import PythonVirtualenvOperator
+from airflow.sdk import BaseOperator, TriggerRule
 
 # Airflow's BaseOperatorMeta only wraps __init__ of BaseOperator subclasses and expects
 # the most-derived class to define one, so each operator repeats its own __init__

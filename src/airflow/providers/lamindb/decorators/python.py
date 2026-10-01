@@ -5,9 +5,8 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping, Sequence
 from typing import Any
 
-from airflow.sdk.bases.decorator import DecoratedOperator, task_decorator_factory
-
 from airflow.providers.lamindb.operators.step import LaminDBStepOperator
+from airflow.sdk.bases.decorator import DecoratedOperator, task_decorator_factory
 
 
 class LaminDBDecoratedOperator(DecoratedOperator, LaminDBStepOperator):  # type: ignore[misc]

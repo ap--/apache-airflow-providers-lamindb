@@ -5,15 +5,14 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any
 
-from airflow.providers.standard.decorators.python_virtualenv import _PythonVirtualenvDecoratedOperator
-from airflow.sdk.bases.decorator import task_decorator_factory
-
 from airflow.providers.lamindb.operators.flow import wire_flow_tasks
 from airflow.providers.lamindb.utils.remote import (
     RemoteLaminDBStepMixin,
     add_lamindb_requirement,
     is_lamindb_requirement,
 )
+from airflow.providers.standard.decorators.python_virtualenv import _PythonVirtualenvDecoratedOperator
+from airflow.sdk.bases.decorator import task_decorator_factory
 
 # virtualenv settings the auto-wired flow operators copy from the first step
 _SHARED_VENV_ARGS = (
