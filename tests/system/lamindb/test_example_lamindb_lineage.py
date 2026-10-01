@@ -57,7 +57,8 @@ def test_dag_run_success_including_virtualenv_step(dags):
 
     flow, steps = flow_and_steps("lamindb_example_ok", dr.run_id)
     assert flow.status == "completed"
-    assert flow.transform.kind == "script" and flow.transform.source_code is not None
+    assert flow.transform.kind == "script"
+    assert flow.transform.source_code is not None
     assert set(steps) == {"extract", "transform", "load", "venv_step"}
     for step in steps.values():
         assert step.status == "completed"
@@ -74,7 +75,8 @@ def test_failed_step_fails_dag_run_and_flow(dags):
     assert str(dr.state) == "failed"  # finish is a teardown, so it does not mask the failure
 
     flow, steps = flow_and_steps("lamindb_example_fail", dr.run_id)
-    assert flow.status == "errored" and flow.finished_at is not None
+    assert flow.status == "errored"
+    assert flow.finished_at is not None
     assert steps["boom"].status == "errored"
 
 

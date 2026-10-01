@@ -103,6 +103,8 @@ ignore = ["RUF012", "TC003"]
 # pkgutil-style namespace packages must contain only the __path__ line
 "src/airflow/__init__.py" = ["I002"]
 "src/airflow/providers/__init__.py" = ["I002"]
+# shipped as source to virtualenvs and pods; only stdlib and lamindb imports allowed
+"src/airflow/providers/lamindb/utils/runtime.py" = ["I002"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["airflow.providers.lamindb", "unit"]

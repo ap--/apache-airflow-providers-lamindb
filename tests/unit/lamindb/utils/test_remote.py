@@ -23,7 +23,9 @@ CONFIG = {
 def test_remote_step_source_runs_user_function_as_step(fake_lamindb: MagicMock) -> None:
     fake_lamindb.flow_run = flow_run = MagicMock(**{"transform.key": "my_dag.py"})
     source = build_remote_step_source(
-        user_source="def extract(count=10):\n    return {'count': count}\n", callable_name="extract", config=CONFIG
+        user_source="def extract(count=10):\n    return {'count': count}\n",
+        callable_name="extract",
+        config=CONFIG,
     )
     namespace: dict = {}
     exec(source, namespace)  # what the virtualenv/pod script does, minus the template
@@ -54,7 +56,10 @@ def test_remote_flow_source_calls_runtime_and_returns_run_uid(fake_lamindb: Magi
     namespace: dict = {}
     exec(source, namespace)
 
-    assert namespace["flow_fn"]({"reference": "my_dag/run_1", "success": False, "instance": "owner/name"}) == "flowuid"
+    assert (
+        namespace["flow_fn"]({"reference": "my_dag/run_1", "success": False, "instance": "owner/name"})
+        == "flowuid"
+    )
     fake_lamindb.connect.assert_called_once_with("owner/name")
     assert flow_run._status_code == 1
 

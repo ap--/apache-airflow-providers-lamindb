@@ -85,7 +85,9 @@ def run_script(script: str, tmp_path) -> str:
     """Run ``script`` in a fresh interpreter, as a virtualenv/pod would."""
     path = tmp_path / "script.py"
     path.write_text(script)
-    proc = subprocess.run([sys.executable, str(path)], capture_output=True, text=True, cwd=tmp_path, check=False)
+    proc = subprocess.run(
+        [sys.executable, str(path)], capture_output=True, text=True, cwd=tmp_path, check=False
+    )
     assert proc.returncode == 0, proc.stderr
     return proc.stdout
 
@@ -105,7 +107,11 @@ def test_is_lamindb_tracked_detects_ln_step() -> None:
 def test_flow_and_steps_end_to_end(dag_module, run_id):
     import lamindb as ln
 
-    from airflow.providers.lamindb import LaminDBFlowFinishOperator, LaminDBFlowInitOperator, LaminDBStepOperator
+    from airflow.providers.lamindb import (
+        LaminDBFlowFinishOperator,
+        LaminDBFlowInitOperator,
+        LaminDBStepOperator,
+    )
 
     init = LaminDBFlowInitOperator()
     flow_uid = init.execute(make_context(dag_module, run_id, init.task_id))
@@ -123,7 +129,9 @@ def test_flow_and_steps_end_to_end(dag_module, run_id):
     step = LaminDBStepOperator(task_id="extract", python_callable=dag_module.extract, op_kwargs={"count": 3})
     assert step.execute(make_context(dag_module, run_id, "extract")) == {"count": 3}
     # already @ln.step-decorated: used as is, no nested run
-    step2 = LaminDBStepOperator(task_id="transform", python_callable=dag_module.transform, op_args=[{"count": 3}])
+    step2 = LaminDBStepOperator(
+        task_id="transform", python_callable=dag_module.transform, op_args=[{"count": 3}]
+    )
     assert step2.execute(make_context(dag_module, run_id, "transform")) == {"count": 6}
     assert ln.context.run is None
 
@@ -203,7 +211,9 @@ def test_remote_sources_run_in_fresh_interpreter(dag_module, run_id, tmp_path):
         "params": flow_run_params(context),
         "instance": instance,
     }
-    flow_uid = json.loads(run_script(flow_script("start_flow_run", start_config), tmp_path).split("RESULT=")[1])
+    flow_uid = json.loads(
+        run_script(flow_script("start_flow_run", start_config), tmp_path).split("RESULT=")[1]
+    )
     flow_run = ln.Run.get(uid=flow_uid)
     assert flow_run.reference == reference
     assert flow_run.status == "started"

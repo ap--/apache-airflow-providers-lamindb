@@ -60,7 +60,9 @@ def test_step_operator_untracked_unwraps_lamindb_step() -> None:
         raise AssertionError("tracked wrapper must not run")
 
     # what @ln.step() returns: a functools.wraps'd wrapper defined in lamindb
-    wrapper_tracked.__code__ = wrapper_tracked.__code__.replace(co_filename="/site-packages/lamindb/core/_context.py")
+    wrapper_tracked.__code__ = wrapper_tracked.__code__.replace(
+        co_filename="/site-packages/lamindb/core/_context.py"
+    )
     wrapper_tracked.__wrapped__ = add
 
     op = LaminDBStepOperator(task_id="step", python_callable=wrapper_tracked, op_args=[1], track=False)

@@ -55,7 +55,10 @@ _lamindb_airflow_user_fn = {callable_name}
 
 
 def build_remote_flow_source(*, function_name: str, runtime_function: str) -> str:
-    """Define ``function_name(lamindb_airflow_config)`` calling ``runtime.<runtime_function>``; returns the run uid."""
+    """Define ``function_name(lamindb_airflow_config)`` calling ``runtime.<runtime_function>``.
+
+    The generated function returns the run uid.
+    """
     return (
         _runtime_loader_source()
         + f"""
@@ -115,7 +118,12 @@ class RemoteLaminDBStepMixin:
     _lamindb_remote: dict[str, str | None] | None = None
 
     def __init__(
-        self, *, lamindb_instance: str | None = None, auto_flow: bool = True, track: bool = True, **kwargs: Any
+        self,
+        *,
+        lamindb_instance: str | None = None,
+        auto_flow: bool = True,
+        track: bool = True,
+        **kwargs: Any,
     ) -> None:
         super().__init__(**kwargs)
         self.lamindb_instance = lamindb_instance

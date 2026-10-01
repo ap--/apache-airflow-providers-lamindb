@@ -42,7 +42,9 @@ def test_flow_init_refuses_to_clobber_global_run(fake_lamindb: MagicMock, make_c
     ("task_states", "status"),
     [({"a": "success", "lamindb_flow_finish": "running"}, 0), ({"a": "success", "b": "upstream_failed"}, 1)],
 )
-def test_flow_finish_records_dag_run_outcome(fake_lamindb: MagicMock, make_context, task_states, status) -> None:
+def test_flow_finish_records_dag_run_outcome(
+    fake_lamindb: MagicMock, make_context, task_states, status
+) -> None:
     fake_lamindb.flow_run = flow_run = MagicMock(uid="flowuid")
     context = make_context(task_states=task_states)
 
@@ -68,10 +70,13 @@ def test_flow_finish_without_flow_run_raises(fake_lamindb: MagicMock, make_conte
 def test_flow_operators_are_setup_and_teardown(init_cls, finish_cls) -> None:
     init, finish = init_cls(), finish_cls()
     assert (init.task_id, finish.task_id) == ("lamindb_flow_init", "lamindb_flow_finish")
-    assert init.is_setup and not init.is_teardown
-    assert finish.is_teardown and finish.trigger_rule == "all_done_setup_success"
+    assert init.is_setup
+    assert not init.is_teardown
+    assert finish.is_teardown
+    assert finish.trigger_rule == "all_done_setup_success"
     plain = finish_cls(is_teardown=False)
-    assert not plain.is_teardown and plain.trigger_rule == "all_done"
+    assert not plain.is_teardown
+    assert plain.trigger_rule == "all_done"
     assert not init_cls(is_setup=False).is_setup
 
 
@@ -118,6 +123,10 @@ def test_venv_flow_finish_closes_flow_run_in_venv(fake_lamindb: MagicMock, make_
     assert _run_in_fake_venv(op, make_context(task_states={"b": "failed"}), fake_lamindb) == "flowuid"
     fake_lamindb.connect.assert_called_once_with("owner/explicit")
     assert op.op_kwargs == {
-        "lamindb_airflow_config": {"instance": "owner/explicit", "reference": "my_dag/run_1", "success": False}
+        "lamindb_airflow_config": {
+            "instance": "owner/explicit",
+            "reference": "my_dag/run_1",
+            "success": False,
+        }
     }
     assert flow_run._status_code == 1

@@ -23,7 +23,9 @@ os.environ.setdefault("AIRFLOW__CORE__LOAD_EXAMPLES", "False")
 def make_context() -> Callable[..., dict[str, Any]]:
     """Build a minimal Airflow task context for DAG ``my_dag``."""
 
-    def _make(run_id: str = "run_1", task_states: dict[str, str] | None = None, fileloc: str = "/dags/my_dag.py"):
+    def _make(
+        run_id: str = "run_1", task_states: dict[str, str] | None = None, fileloc: str = "/dags/my_dag.py"
+    ):
         ti = MagicMock(log_url="http://airflow/dags/my_dag/runs/run_1/tasks/t")
         ti.get_task_states = MagicMock(return_value={run_id: task_states or {}})
         dag_run = MagicMock(run_id=run_id, conf={"x": 1}, run_type="manual")

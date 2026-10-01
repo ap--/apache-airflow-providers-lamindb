@@ -64,7 +64,8 @@ def test_remote_step_ships_wrapped_source_only_during_execute(fake_lamindb: Magi
     fake_lamindb.flow_run = MagicMock(uid="flowuid")
     op = _single_task(task.lamindb_venv, step)
     plain = op.get_python_source()
-    assert plain.startswith("def step():") and "_lamindb_airflow_step" not in plain
+    assert plain.startswith("def step():")
+    assert "_lamindb_airflow_step" not in plain
 
     def fake_venv_execute(self, context):
         namespace: dict = {}
@@ -107,7 +108,8 @@ def test_untracked_venv_step_ships_source_unchanged(make_context) -> None:
 
     with patch.object(type(op).__mro__[2], "execute", fake_venv_execute):
         assert op.execute(make_context()) == 1
-    assert seen["source"].startswith("def step():") and "_lamindb_airflow_step" not in seen["source"]
+    assert seen["source"].startswith("def step():")
+    assert "_lamindb_airflow_step" not in seen["source"]
 
 
 def test_task_lamindb_k8s_builds_operator() -> None:

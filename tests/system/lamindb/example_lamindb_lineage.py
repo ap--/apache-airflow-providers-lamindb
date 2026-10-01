@@ -1,5 +1,7 @@
 """Example DAGs for lamindb-airflow, run by test_example_lamindb_lineage.py through dag.test()."""
 
+from __future__ import annotations
+
 import lamindb as ln
 from airflow.sdk import DAG, task
 
@@ -24,7 +26,9 @@ with DAG("lamindb_example_ok") as dag_ok:
     init = LaminDBFlowInitOperator()
     finish = LaminDBFlowFinishOperator()
     t_extract = LaminDBStepOperator(task_id="extract", python_callable=extract, op_kwargs={"count": 3})
-    t_transform = LaminDBStepOperator(task_id="transform", python_callable=transform, op_args=[t_extract.output])
+    t_transform = LaminDBStepOperator(
+        task_id="transform", python_callable=transform, op_args=[t_extract.output]
+    )
 
     @task.lamindb
     def load(data: dict) -> int:

@@ -46,7 +46,12 @@ class LaminDBStepOperator(BaseOperator):
             wire_flow_tasks(self, venv=False)
 
     def execute(self, context: Any) -> Any:
-        from airflow.providers.lamindb.utils.context import require_flow_run, require_lamindb, run_as_step, untracked
+        from airflow.providers.lamindb.utils.context import (
+            require_flow_run,
+            require_lamindb,
+            run_as_step,
+            untracked,
+        )
 
         if not self.track:
             return untracked(self.python_callable)(*self.op_args, **self.op_kwargs)

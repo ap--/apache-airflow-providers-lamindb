@@ -29,7 +29,8 @@ def test_import_does_not_need_lamindb() -> None:
         "import sys\n"
         "sys.modules['lamindb'] = sys.modules['lamindb_setup'] = None\n"
         "import airflow.providers.lamindb, airflow.providers.lamindb.get_provider_info\n"
-        "import airflow.providers.lamindb.decorators.python, airflow.providers.lamindb.decorators.python_virtualenv\n"
+        "import airflow.providers.lamindb.decorators.python\n"
+        "import airflow.providers.lamindb.decorators.python_virtualenv\n"
         "import airflow.providers.lamindb.decorators.kubernetes\n"
     )
     subprocess.run([sys.executable, "-c", code], check=True)

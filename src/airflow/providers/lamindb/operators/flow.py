@@ -60,7 +60,9 @@ class LaminDBFlowFinishOperator(BaseOperator):
     ``LaminDBVenvFlowFinishOperator`` otherwise.
     """
 
-    def __init__(self, *, task_id: str = "lamindb_flow_finish", is_teardown: bool = True, **kwargs: Any) -> None:
+    def __init__(
+        self, *, task_id: str = "lamindb_flow_finish", is_teardown: bool = True, **kwargs: Any
+    ) -> None:
         if not is_teardown:
             kwargs.setdefault("trigger_rule", TriggerRule.ALL_DONE)
         super().__init__(task_id=task_id, **kwargs)
@@ -162,7 +164,9 @@ class LaminDBVenvFlowFinishOperator(_LaminDBVenvFlowOperator):
 
     _runtime_function = "finish_flow_run"
 
-    def __init__(self, *, task_id: str = "lamindb_flow_finish", is_teardown: bool = True, **kwargs: Any) -> None:
+    def __init__(
+        self, *, task_id: str = "lamindb_flow_finish", is_teardown: bool = True, **kwargs: Any
+    ) -> None:
         if not is_teardown:
             kwargs.setdefault("trigger_rule", TriggerRule.ALL_DONE)
         super().__init__(task_id=task_id, **kwargs)

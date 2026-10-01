@@ -27,7 +27,7 @@ _SHARED_VENV_ARGS = (
 )
 
 
-class LaminDBVenvDecoratedOperator(RemoteLaminDBStepMixin, _PythonVirtualenvDecoratedOperator):  # type: ignore[misc]
+class LaminDBVenvDecoratedOperator(RemoteLaminDBStepMixin, _PythonVirtualenvDecoratedOperator):
     """``@task.lamindb_venv``: LaminDB step inside a virtualenv."""
 
     custom_operator_name = "@task.lamindb_venv"

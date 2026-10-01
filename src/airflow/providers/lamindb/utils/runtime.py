@@ -43,7 +43,11 @@ def get_flow_run(reference):
     """Return the flow run tagged with ``reference``, or None if it was never started."""
     import lamindb as ln
 
-    return ln.Run.filter(reference=reference, reference_type=FLOW_RUN_REFERENCE_TYPE).order_by("-created_at").first()
+    return (
+        ln.Run.filter(reference=reference, reference_type=FLOW_RUN_REFERENCE_TYPE)
+        .order_by("-created_at")
+        .first()
+    )
 
 
 def require_flow_run(reference):

@@ -13,8 +13,15 @@ def test_runtime_is_self_contained() -> None:
     """The module is shipped as source to interpreters without Airflow or this package."""
     tree = ast.parse(inspect.getsource(runtime))
     imported = {
-        alias.name.split(".")[0] for node in ast.walk(tree) if isinstance(node, ast.Import) for alias in node.names
-    } | {node.module.split(".")[0] for node in ast.walk(tree) if isinstance(node, ast.ImportFrom) and node.module}
+        alias.name.split(".")[0]
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Import)
+        for alias in node.names
+    } | {
+        node.module.split(".")[0]
+        for node in ast.walk(tree)
+        if isinstance(node, ast.ImportFrom) and node.module
+    }
     assert imported <= {"datetime", "inspect", "pathlib", "lamindb"}
     top_level = [node for node in tree.body if isinstance(node, (ast.Import, ast.ImportFrom))]
     assert all(node.module == "datetime" for node in top_level if isinstance(node, ast.ImportFrom))
@@ -58,7 +65,9 @@ def test_start_flow_run_restarts_existing_run_on_retry(fake_lamindb: MagicMock) 
     fake_lamindb.track.assert_not_called()
     assert existing._status_code == runtime.STATUS_RESTARTED
     assert existing.finished_at is None
-    fake_lamindb.Run.filter.assert_called_with(reference="my_dag/run_1", reference_type=runtime.FLOW_RUN_REFERENCE_TYPE)
+    fake_lamindb.Run.filter.assert_called_with(
+        reference="my_dag/run_1", reference_type=runtime.FLOW_RUN_REFERENCE_TYPE
+    )
 
 
 def test_start_flow_run_refuses_to_clobber_global_run(fake_lamindb: MagicMock) -> None:
@@ -67,7 +76,9 @@ def test_start_flow_run_refuses_to_clobber_global_run(fake_lamindb: MagicMock) -
         runtime.start_flow_run("my_dag/run_1", "/dags/my_dag.py", "my_dag", {})
 
 
-@pytest.mark.parametrize(("success", "status"), [(True, runtime.STATUS_COMPLETED), (False, runtime.STATUS_ERRORED)])
+@pytest.mark.parametrize(
+    ("success", "status"), [(True, runtime.STATUS_COMPLETED), (False, runtime.STATUS_ERRORED)]
+)
 def test_finish_flow_run(fake_lamindb: MagicMock, success: bool, status: int) -> None:
     fake_lamindb.flow_run = flow_run = MagicMock(finished_at=None)
     assert runtime.finish_flow_run("my_dag/run_1", success) is flow_run
