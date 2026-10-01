@@ -86,6 +86,30 @@ def test_remote_step_ships_wrapped_source_only_during_execute(fake_lamindb: Magi
     assert op.get_python_source() == plain
 
 
+def test_untracked_steps_are_plain_tasks() -> None:
+    @dag
+    def test_dag():
+        task.lamindb(track=False)(step)()
+        task.lamindb_venv(track=False, requirements=["pandas"], task_id="venv_step")(step)()
+
+    built = test_dag()
+    assert sorted(built.task_ids) == ["step", "venv_step"]
+    assert built.get_task("venv_step").requirements == ["pandas"]
+
+
+def test_untracked_venv_step_ships_source_unchanged(make_context) -> None:
+    op = _single_task(task.lamindb_venv(track=False), step)
+    seen = {}
+
+    def fake_venv_execute(self, context):
+        seen["source"] = self.get_python_source()
+        return 1
+
+    with patch.object(type(op).__mro__[2], "execute", fake_venv_execute):
+        assert op.execute(make_context()) == 1
+    assert seen["source"].startswith("def step():") and "_lamindb_airflow_step" not in seen["source"]
+
+
 def test_task_lamindb_k8s_builds_operator() -> None:
     pytest.importorskip("airflow.providers.cncf.kubernetes")
     op = _single_task(task.lamindb_k8s(image="python:3.12", lamindb_instance="owner/name"), step)

@@ -40,3 +40,36 @@ def test_flow_run_context_refuses_to_clobber_other_run(fake_lamindb: MagicMock) 
     fake_lamindb.context._run = MagicMock(uid="other")
     with pytest.raises(AirflowException, match="already set"), flow_run_context(MagicMock(uid="flow")):
         pass
+
+
+def test_step_operator_untracked_runs_plain_callable(fake_lamindb: MagicMock, make_context) -> None:
+    op = LaminDBStepOperator(
+        task_id="step", python_callable=lambda x, *, y: x + y, op_args=[1], op_kwargs={"y": 2}, track=False
+    )
+
+    assert op.execute(make_context()) == 3  # no flow run needed
+    fake_lamindb.step.assert_not_called()
+    assert fake_lamindb.context.run is None
+
+
+def test_step_operator_untracked_unwraps_lamindb_step() -> None:
+    def add(x: int) -> int:
+        return x + 1
+
+    def wrapper_tracked(*args, **kwargs):
+        raise AssertionError("tracked wrapper must not run")
+
+    # what @ln.step() returns: a functools.wraps'd wrapper defined in lamindb
+    wrapper_tracked.__code__ = wrapper_tracked.__code__.replace(co_filename="/site-packages/lamindb/core/_context.py")
+    wrapper_tracked.__wrapped__ = add
+
+    op = LaminDBStepOperator(task_id="step", python_callable=wrapper_tracked, op_args=[1], track=False)
+    assert op.execute({}) == 2
+
+
+def test_step_operator_untracked_is_not_wired_to_flow() -> None:
+    from airflow.sdk import DAG
+
+    with DAG("my_dag") as dag:
+        LaminDBStepOperator(task_id="step", python_callable=lambda: None, track=False)
+    assert dag.task_ids == ["step"]

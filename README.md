@@ -118,7 +118,10 @@ Auto-wiring caveats:
 | `@task.lamindb_venv(...)` – like `@task.virtualenv`; the function runs as a step in the virtualenv | no |
 | `@task.lamindb_k8s(image=..., ...)` – like `@task.kubernetes`; the image needs lamindb and credentials | no |
 
-All step operators accept `auto_flow`. The virtualenv and pod variants also accept
+All step operators accept `auto_flow` and `track`. `track=False` runs the function as the
+plain Airflow equivalent (`@task`, `@task.virtualenv`, `@task.kubernetes`): no step run, no
+flow wiring, and no lamindb needed; an `@ln.step()`-decorated callable is called unwrapped.
+The virtualenv and pod variants also accept
 `lamindb_instance`, the instance slug to connect to (default: the worker's instance if
 lamindb is set up there, else `LAMIN_CURRENT_INSTANCE`). The virtualenv variants accept
 `lamindb_version`: `lamindb==<version>` is added to `requirements` unless you list

@@ -83,6 +83,11 @@ def is_lamindb_tracked(fn: Callable[..., Any]) -> bool:
     )
 
 
+def untracked(fn: Callable[..., Any]) -> Callable[..., Any]:
+    """Return ``fn`` without its ``@ln.step`` / ``@ln.flow`` wrapper, if it has one."""
+    return fn.__wrapped__ if is_lamindb_tracked(fn) else fn  # type: ignore[attr-defined]
+
+
 def as_lamindb_step(fn: Callable[..., Any]) -> Callable[..., Any]:
     """Return ``fn`` as a LaminDB step, wrapping with ``ln.step()`` unless already tracked."""
     import lamindb as ln
