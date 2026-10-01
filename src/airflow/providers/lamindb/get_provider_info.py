@@ -4,11 +4,12 @@ from __future__ import annotations
 # verifies that both describe the same provider.
 
 
-def get_provider_info():
+def get_provider_info() -> dict[str, object]:
     return {
         "package-name": "lamindb-airflow",
         "name": "LaminDB",
-        "description": "`LaminDB <https://lamin.ai/>`__ event-driven scheduling via the LaminHub REST API.\n",
+        "description": "`LaminDB <https://lamin.ai/>`__ lineage for DAG runs and event-driven scheduling "
+        "via the LaminHub REST API.\n",
         "integrations": [
             {
                 "integration-name": "LaminDB",
@@ -17,7 +18,16 @@ def get_provider_info():
                     "/docs/lamindb-airflow/triggers.rst",
                     "/docs/lamindb-airflow/sensors.rst",
                 ],
-                "tags": ["service"],
+                "tags": ["service", "software"],
+            }
+        ],
+        "operators": [
+            {
+                "integration-name": "LaminDB",
+                "python-modules": [
+                    "airflow.providers.lamindb.operators.flow",
+                    "airflow.providers.lamindb.operators.step",
+                ],
             }
         ],
         "hooks": [
@@ -68,5 +78,16 @@ def get_provider_info():
                     },
                 },
             }
+        ],
+        "task-decorators": [
+            {"name": "lamindb", "class-name": "airflow.providers.lamindb.decorators.python.lamindb_task"},
+            {
+                "name": "lamindb_venv",
+                "class-name": "airflow.providers.lamindb.decorators.python_virtualenv.lamindb_venv_task",
+            },
+            {
+                "name": "lamindb_k8s",
+                "class-name": "airflow.providers.lamindb.decorators.kubernetes.lamindb_k8s_task",
+            },
         ],
     }
