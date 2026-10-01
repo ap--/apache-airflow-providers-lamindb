@@ -12,6 +12,15 @@ from airflow.providers.lamindb.triggers.records import (
     branch_scope_filter,
     ready_records,
 )
+from airflow.providers.lamindb.utils.filters import (
+    ArtifactField,
+    ArtifactKind,
+    F,
+    LaminDBRegistry,
+    RunField,
+    ULabelField,
+    UserField,
+)
 from unit.lamindb.fakes import INSTANCE, FakeHook, dbwrite, evaluate
 
 MAIN, TRASH, FEATURE = 1, -1, 42
@@ -118,7 +127,10 @@ class TestRecordEventTrigger:
             ("deleted", 1, 3),
         ]
 
-    async def test_filter(self):
+    @pytest.mark.parametrize(
+        "filter", [{"name": {"eq": "keep"}}, F(ULabelField.NAME) == "keep"], ids=["dict", "builder"]
+    )
+    async def test_filter(self, filter):
         writes = [
             dbwrite(1, "INSERT", ULABEL, 1),
             dbwrite(2, "INSERT", ULABEL, 2),
@@ -127,9 +139,7 @@ class TestRecordEventTrigger:
         ]
         records = {"core.ulabel": {1: ulabel(1, name="keep"), 2: ulabel(2, name="drop")}}
         hook = FakeHook(writes=writes, records=records)
-        trigger = LaminDBRecordEventTrigger(
-            "core.ulabel", events=["created", "deleted"], filter={"name": {"eq": "keep"}}
-        )
+        trigger = LaminDBRecordEventTrigger("core.ulabel", events=["created", "deleted"], filter=filter)
         assert summary(await events_for(trigger, hook)) == [("created", 1, 1), ("deleted", 3, 3)]
 
     async def test_deleted_record_without_local_fields(self):
@@ -203,11 +213,35 @@ class TestRecordEventTrigger:
             ({"events": ["removed"]}, "Invalid events"),
             ({"events": []}, "Invalid events"),
             ({"events": "deleted", "filter": {"created_by.handle": {"eq": "x"}}}, "direct fields"),
+            (
+                {"events": "deleted", "filter": F(ULabelField.CREATED_BY, UserField.HANDLE) == "x"},
+                "direct fields",
+            ),
+            ({"filter": {"name": {"equals": "x"}}}, "Unknown filter operator 'equals'"),
         ],
     )
     def test_validation(self, kwargs, message):
         with pytest.raises(ValueError, match=message):
             LaminDBRecordEventTrigger("core.ulabel", **kwargs)
+
+    def test_filter_builder_and_enums_serialize_like_plain_values(self):
+        trigger = LaminDBRecordEventTrigger(
+            LaminDBRegistry.ULABEL,
+            events="updated",
+            filter=F(ULabelField.NAME).startswith("a") & (F(ULabelField.CREATED_BY_ID) == 7),
+            changed_fields=[ULabelField.NAME, "description"],
+        )
+        plain = LaminDBRecordEventTrigger(
+            "core.ulabel",
+            events="updated",
+            filter={"and": [{"name": {"startswith": "a"}}, {"created_by_id": {"eq": 7}}]},
+            changed_fields=["name", "description"],
+        )
+        assert trigger.serialize() == plain.serialize()
+        assert trigger.state_key == plain.state_key
+        _, kwargs = trigger.serialize()
+        assert type(kwargs["registry"]) is str
+        assert [type(field) for field in kwargs["changed_fields"]] == [str, str]
 
     def test_serialize(self):
         trigger = LaminDBRecordEventTrigger(
@@ -328,6 +362,18 @@ class TestArtifactEventTrigger:
         assert kwargs["suffix"] == [".csv"]
         assert LaminDBArtifactEventTrigger(**kwargs).serialize() == (classpath, kwargs)
 
+    def test_kind_enum_and_filter_builder(self):
+        trigger = LaminDBArtifactEventTrigger(
+            kind=[ArtifactKind.DATASET, ArtifactKind.MODEL], filter=F(ArtifactField.SIZE) > 0
+        )
+        _, kwargs = trigger.serialize()
+        assert kwargs["kind"] == ["dataset", "model"]
+        assert [type(kind) for kind in kwargs["kind"]] == [str, str]
+        assert kwargs["filter"] == {"size": {"gt": 0}}
+        assert trigger._record_filter() == {
+            "and": [{"size": {"gt": 0}}, {"kind": {"in": ["dataset", "model"]}}]
+        }
+
 
 class TestRecordSensorTrigger:
     @pytest.fixture
@@ -367,6 +413,22 @@ class TestRecordSensorTrigger:
         trigger = LaminDBRecordSensorTrigger("core.run", {"name": {"eq": "x"}}, branch=None, min_count=2)
         classpath, kwargs = trigger.serialize()
         assert LaminDBRecordSensorTrigger(**kwargs).serialize() == (classpath, kwargs)
+
+    def test_filter_builder_and_enums(self):
+        trigger = LaminDBRecordSensorTrigger(LaminDBRegistry.RUN, F(RunField.NAME) == "x", branch=None)
+        _, kwargs = trigger.serialize()
+        assert type(kwargs["registry"]) is str
+        assert kwargs["registry"] == "core.run"
+        assert kwargs["filter"] == {"name": {"eq": "x"}}
+
+    async def test_filter_builder(self, trigger):
+        hook = FakeHook(
+            records={"core.artifact": {1: artifact(1, key="raw/a.csv"), 2: artifact(2, key="b.csv")}}
+        )
+        events = [
+            e.payload async for e in trigger(hook, filter=F(ArtifactField.KEY).startswith("raw/")).run()
+        ]
+        assert events == [{"status": "success", "records": [artifact(1, key="raw/a.csv")]}]
 
 
 def test_branch_scope_filter():

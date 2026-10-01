@@ -4,7 +4,8 @@ import json
 from collections.abc import Iterable
 from typing import Any, Literal
 
-from airflow.providers.lamindb.utils.filters import combine_filters
+from airflow.providers.lamindb.utils.enums import plain_value
+from airflow.providers.lamindb.utils.filters import FilterLike, combine_filters
 
 BranchStatus = Literal["standalone", "draft", "review", "merged", "closed"]
 
@@ -49,9 +50,11 @@ def normalize_statuses(statuses: str | Iterable[str] | None, *, name: str) -> li
 
 
 def normalize_str_list(value: str | Iterable[str] | None) -> list[str] | None:
+    """Return a list of plain strings; enum members such as ``ArtifactKind.DATASET`` become their values."""
     if value is None:
         return None
-    return [value] if isinstance(value, str) else list(value)
+    values = [value] if isinstance(value, str) else list(value)
+    return [plain_value(item) for item in values]
 
 
 def parse_json_value(value: Any) -> Any:
@@ -85,7 +88,7 @@ def artifact_filter(
     suffix: str | Iterable[str] | None = None,
     kind: str | Iterable[str] | None = None,
     include_internal: bool = False,
-    extra: dict[str, Any] | None = None,
+    extra: FilterLike | None = None,
 ) -> dict[str, Any] | None:
     """Build a LaminHub REST filter for artifacts from common criteria."""
     suffixes = normalize_str_list(suffix)

@@ -11,6 +11,15 @@ from airflow.providers.lamindb.sensors.branches import LaminDBBranchStatusSensor
 from airflow.providers.lamindb.sensors.records import LaminDBArtifactSensor, LaminDBRecordSensor
 from airflow.providers.lamindb.triggers.branches import LaminDBBranchStatusSensorTrigger
 from airflow.providers.lamindb.triggers.records import LaminDBRecordSensorTrigger
+from airflow.providers.lamindb.utils.filters import (
+    ArtifactField,
+    ArtifactKind,
+    F,
+    LaminDBRegistry,
+    RunField,
+    RunStatus,
+    TransformField,
+)
 
 
 def branch(status_code: int) -> dict[str, Any]:
@@ -145,6 +154,31 @@ class TestRecordSensor:
     def test_validation(self):
         with pytest.raises(ValueError, match="min_count"):
             LaminDBRecordSensor(task_id="wait", registry="core.run", min_count=5, limit=2)
+        with pytest.raises(ValueError, match="Unknown filter operator 'equals' on 'name'"):
+            LaminDBRecordSensor(task_id="wait", registry="core.run", filter={"name": {"equals": "x"}})
+
+    def test_filter_builder_and_enums(self, query_records):
+        query_records.return_value = [{"id": 1}]
+        sensor = LaminDBRecordSensor(
+            task_id="wait",
+            registry=LaminDBRegistry.RUN,
+            filter=(F(RunField.TRANSFORM, TransformField.KEY) == "preprocess.py")
+            & (F(RunField.STATUS_CODE) == RunStatus.COMPLETED),
+            branch=None,
+        )
+        assert type(sensor.registry) is str
+        assert sensor.filter == {
+            "and": [{"transform.key": {"eq": "preprocess.py"}}, {"_status_code": {"eq": 0}}]
+        }
+        assert sensor.poke({}).is_done
+        query_records.assert_called_with("core.run", sensor.filter, order_by=["-id"], limit=100)
+
+    def test_templated_filter(self):
+        sensor = LaminDBRecordSensor(
+            task_id="wait", registry="core.run", filter=F(RunField.NAME) == "{{ params.name }}"
+        )
+        sensor.render_template_fields({"params": {"name": "nightly"}})
+        assert sensor.filter == {"name": {"eq": "nightly"}}
 
 
 class TestArtifactSensor:
@@ -155,6 +189,21 @@ class TestArtifactSensor:
         query_records.assert_called_with(
             "core.artifact",
             {"and": [{"key": {"eq": "raw/a.csv"}}, {"branch_id": {"eq": 1}}]},
+            order_by=["-id"],
+            limit=100,
+        )
+
+    def test_kind_enum_and_filter_builder(self, query_records):
+        query_records.return_value = []
+        sensor = LaminDBArtifactSensor(
+            task_id="wait", kind=ArtifactKind.DATASET, filter=F(ArtifactField.SIZE) > 0, branch=None
+        )
+        assert sensor.kind == ["dataset"]
+        assert type(sensor.kind[0]) is str
+        assert not sensor.poke({}).is_done
+        query_records.assert_called_with(
+            "core.artifact",
+            {"and": [{"size": {"gt": 0}}, {"kind": {"in": ["dataset"]}}]},
             order_by=["-id"],
             limit=100,
         )

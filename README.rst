@@ -13,6 +13,8 @@ triggers DAGs on changes in LaminDB instances hosted on LaminHub.
   * comments or readmes are added to branches
 
 * **Deferrable sensors** that wait for a branch status or for artifacts and records.
+* **Filters** built in Python, such as ``F(ArtifactField.KEY).startswith("raw/")``, with enums for
+  registries, fields and operators.
 * **LaminDBHook**, a sync and async client for the `LaminHub REST API <https://docs.lamin.ai/rest>`__.
 
 The triggers poll the LaminHub database write log ("Changes → Database writes") and keep their
@@ -96,12 +98,34 @@ Wait for a branch to be merged, from within a DAG:
 
     LaminDBBranchStatusSensor(task_id="wait_for_merge", branch="my-branch", deferrable=True)
 
+Wait for a completed run of a script, filtering with enums instead of LaminHub REST filter dicts:
+
+.. code-block:: python
+
+    from airflow.providers.lamindb.sensors.records import LaminDBRecordSensor
+    from airflow.providers.lamindb.utils.filters import (
+        F,
+        LaminDBRegistry,
+        RunField,
+        RunStatus,
+        TransformField,
+    )
+
+    LaminDBRecordSensor(
+        task_id="wait_for_run",
+        registry=LaminDBRegistry.RUN,
+        filter=(F(RunField.TRANSFORM, TransformField.KEY) == "preprocess.py")
+        & (F(RunField.STATUS_CODE) == RunStatus.COMPLETED),
+        deferrable=True,
+    )
+
 Documentation
 -------------
 
 * `Connection <docs/connections/lamindb.rst>`__
 * `Triggers (event-driven scheduling) <docs/triggers.rst>`__
 * `Sensors and hook <docs/sensors.rst>`__
+* `Filters <docs/filters.rst>`__
 * `Example DAGs <tests/system/lamindb>`__
 * `Changelog <docs/changelog.rst>`__
 

@@ -63,7 +63,7 @@ Artifacts
 
 :class:`~airflow.providers.lamindb.triggers.records.LaminDBArtifactEventTrigger` reports artifacts that
 are ``created``, ``updated`` or ``deleted`` (argument ``events``, default ``["created"]``). Filter them
-with ``key``, ``key_prefix``, ``suffix``, ``kind`` and a general ``filter``.
+with ``key``, ``key_prefix``, ``suffix``, ``kind`` and a general :doc:`filter <filters>`.
 
 * With ``wait_for_upload=True`` (default), ``created`` fires only once the artifact's upload to
   storage has completed. LaminDB creates the artifact record before it uploads the file and deletes
@@ -93,13 +93,17 @@ Branch-aware semantics (``branch``, default ``main``)
     updates and deletes on all branches. For registries without branches, ``branch`` is ignored.
 
 Filters
-    ``filter`` is a `LaminHub REST filter <https://docs.lamin.ai/rest>`__ such as
-    ``{"key": {"startswith": "raw/"}}`` or ``{"created_by.handle": {"eq": "alice"}}``. The API
+    ``filter`` is a :doc:`filter <filters>` such as
+    ``F(CollectionField.KEY).startswith("raw/")`` or
+    ``F(CollectionField.CREATED_BY, UserField.HANDLE) == "alice"``, or its `LaminHub REST
+    <https://docs.lamin.ai/rest>`__ form such as ``{"created_by.handle": {"eq": "alice"}}``. The API
     evaluates it against the current record. Hard-deleted records can't be queried anymore, so
-    ``deleted`` events only support filters on direct fields of the record.
+    ``deleted`` events only support filters on direct fields of the record, such as
+    ``F(CollectionField.CREATED_BY_ID) == 7``.
 
 Updates
-    ``changed_fields`` restricts ``updated`` events to changes of certain fields.
+    ``changed_fields`` restricts ``updated`` events to changes of certain fields, e.g.
+    ``[CollectionField.KEY]``.
 
 Payload
     ``event``, ``registry``, ``table_name``, ``record_id``, ``record`` (the current record or

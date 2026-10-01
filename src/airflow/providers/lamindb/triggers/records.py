@@ -15,7 +15,13 @@ from airflow.providers.lamindb.utils.dbwrite import (
     is_upload_completion,
     previous_values,
 )
-from airflow.providers.lamindb.utils.filters import combine_filters, is_local_filter, matches_filter
+from airflow.providers.lamindb.utils.enums import plain_value
+from airflow.providers.lamindb.utils.filters import (
+    combine_filters,
+    is_local_filter,
+    matches_filter,
+    normalize_filter,
+)
 from airflow.providers.lamindb.utils.lamindb import (
     SPECIAL_BRANCH_IDS,
     artifact_filter,
@@ -28,7 +34,7 @@ from airflow.triggers.base import BaseTrigger, TriggerEvent
 if TYPE_CHECKING:
     from collections.abc import Iterable
 
-    from airflow.providers.lamindb.utils.filters import Filter
+    from airflow.providers.lamindb.utils.filters import Filter, FilterLike
 
 _Candidate = tuple[dict[str, Any], RecordEvent]
 
@@ -85,15 +91,18 @@ class LaminDBRecordEventTrigger(LaminDBDbWriteEventTrigger):
     from the trash or archive, and ``deleted`` also covers records moved off the branch, for example
     to the trash via ``record.delete()``. For registries without branches, ``branch`` is ignored.
 
-    :param registry: Registry to watch, e.g. ``core.artifact``, ``core.collection``, ``core.run``,
-        ``core.record`` or ``bionty.celltype``.
+    :param registry: Registry to watch, e.g. ``LaminDBRegistry.COLLECTION``, ``"core.run"``,
+        ``"core.record"`` or ``"bionty.celltype"``.
     :param events: Events to report, any of ``created``, ``updated`` and ``deleted``.
     :param branch: Name or id of the branch to watch; ``None`` reports raw inserts, updates and
         deletes on all branches.
-    :param filter: LaminHub REST filter the record must match, for example
+    :param filter: Filter the record must match, built with
+        :class:`~airflow.providers.lamindb.utils.filters.F`, e.g.
+        ``F(ArtifactField.KEY).startswith("raw/")``, or a LaminHub REST filter such as
         ``{"key": {"startswith": "raw/"}}``. It's evaluated against the current record; for hard
         deletes against the deleted row, which only supports direct fields.
-    :param changed_fields: Only report updates that change at least one of these fields.
+    :param changed_fields: Only report updates that change at least one of these fields, e.g.
+        ``[ArtifactField.KEY]``.
     """
 
     def __init__(
@@ -102,16 +111,16 @@ class LaminDBRecordEventTrigger(LaminDBDbWriteEventTrigger):
         *,
         events: str | Sequence[str] = ("created",),
         branch: str | int | None = "main",
-        filter: Mapping[str, Any] | None = None,
+        filter: FilterLike | None = None,
         changed_fields: Sequence[str] | None = None,
         **kwargs: Any,
     ) -> None:
         super().__init__(**kwargs)
-        self.registry = registry
+        self.registry: str = plain_value(registry)
         self.events = _normalize_events(events)
         self.branch = branch
-        self.filter = dict(filter) if filter else None
-        self.changed_fields = list(changed_fields) if changed_fields else None
+        self.filter = normalize_filter(filter)
+        self.changed_fields = normalize_str_list(changed_fields) if changed_fields else None
         if "deleted" in self.events and not is_local_filter(self._record_filter()):
             raise ValueError(
                 "'deleted' events only support filters on direct fields of the record "
@@ -275,13 +284,13 @@ class LaminDBArtifactEventTrigger(LaminDBRecordEventTrigger):
     :param key: Only artifacts with this exact key.
     :param key_prefix: Only artifacts whose key starts with this prefix, e.g. ``"raw/"``.
     :param suffix: Only artifacts with this suffix (or any of these suffixes), e.g. ``".parquet"``.
-    :param kind: Only artifacts of this kind (or any of these kinds), e.g. ``"dataset"``.
+    :param kind: Only artifacts of this kind (or any of these kinds), e.g. ``ArtifactKind.DATASET``.
     :param include_internal: Also report artifacts LaminDB creates internally.
     :param wait_for_upload: Report ``created`` only once the upload to storage has completed and
         skip updates of artifacts that are being uploaded.
     :param events: See :class:`LaminDBRecordEventTrigger`.
     :param branch: See :class:`LaminDBRecordEventTrigger`.
-    :param filter: Additional LaminHub REST filter, see :class:`LaminDBRecordEventTrigger`.
+    :param filter: Additional filter, see :class:`LaminDBRecordEventTrigger`.
     :param changed_fields: See :class:`LaminDBRecordEventTrigger`.
     """
 
@@ -423,7 +432,8 @@ class LaminDBRecordSensorTrigger(BaseTrigger):
     Yields ``{"status": "success", "records": [...]}`` or ``{"status": "error", "message": ...}``.
 
     :param registry: Registry to query, e.g. ``core.artifact``.
-    :param filter: LaminHub REST filter.
+    :param filter: Filter built with :class:`~airflow.providers.lamindb.utils.filters.F` or a
+        LaminHub REST filter.
     :param branch: Only records on this branch (name or id); ``None`` for all branches.
     :param min_count: Number of matching records required.
     :param limit: Maximum number of records returned.
@@ -436,7 +446,7 @@ class LaminDBRecordSensorTrigger(BaseTrigger):
     def __init__(
         self,
         registry: str,
-        filter: Mapping[str, Any] | None = None,
+        filter: FilterLike | None = None,
         *,
         branch: str | int | None = "main",
         min_count: int = 1,
@@ -447,8 +457,8 @@ class LaminDBRecordSensorTrigger(BaseTrigger):
         poll_interval: float = 60.0,
     ) -> None:
         super().__init__()
-        self.registry = registry
-        self.filter = dict(filter) if filter else None
+        self.registry: str = plain_value(registry)
+        self.filter = normalize_filter(filter)
         self.branch = branch
         self.min_count = min_count
         self.limit = limit

@@ -17,6 +17,7 @@
     Connection types <connections/lamindb>
     Triggers <triggers>
     Sensors <sensors>
+    Filters <filters>
 
 Provider package for `LaminDB <https://lamin.ai>`__. It lets DAGs react to changes in LaminDB instances
 hosted on LaminHub:
@@ -27,6 +28,9 @@ hosted on LaminHub:
 * **Deferrable sensors**: wait inside a DAG until a branch is merged or an artifact is available.
   See :doc:`sensors`.
 * **Hook**: query the LaminHub REST API from tasks.
+* **Filters**: select records with Python expressions such as
+  ``F(ArtifactField.KEY).startswith("raw/")``, with enums for registries, fields and operators.
+  See :doc:`filters`.
 
 Requirements
 ------------

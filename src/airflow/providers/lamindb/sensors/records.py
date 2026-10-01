@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Sequence
 from datetime import timedelta
 from typing import TYPE_CHECKING, Any
 
@@ -10,12 +10,14 @@ from airflow.providers.lamindb.triggers.records import (
     branch_scope_filter,
     ready_records,
 )
-from airflow.providers.lamindb.utils.filters import combine_filters
+from airflow.providers.lamindb.utils.enums import plain_value
+from airflow.providers.lamindb.utils.filters import combine_filters, normalize_filter
 from airflow.providers.lamindb.utils.lamindb import artifact_filter, normalize_str_list
 from airflow.sdk import BaseSensorOperator, PokeReturnValue, conf
 from airflow.sdk.exceptions import AirflowException
 
 if TYPE_CHECKING:
+    from airflow.providers.lamindb.utils.filters import FilterLike
     from airflow.sdk import Context
 
 
@@ -29,8 +31,11 @@ class LaminDBRecordSensor(BaseSensorOperator):
         For more information on how to use this sensor, take a look at the guide:
         :ref:`howto/sensor:LaminDBRecordSensor`
 
-    :param registry: Registry to query, e.g. ``core.artifact``, ``core.run`` or ``bionty.celltype``.
-    :param filter: LaminHub REST filter, e.g. ``{"key": {"eq": "raw/sample1.fastq.gz"}}``.
+    :param registry: Registry to query, e.g. ``LaminDBRegistry.RUN``, ``"core.artifact"`` or
+        ``"bionty.celltype"``.
+    :param filter: Filter built with :class:`~airflow.providers.lamindb.utils.filters.F`, e.g.
+        ``F(ArtifactField.KEY) == "raw/sample1.fastq.gz"``, or a LaminHub REST filter such as
+        ``{"key": {"eq": "raw/sample1.fastq.gz"}}``. It's validated when the DAG is parsed.
     :param branch: Only records on this branch (name or id); ``None`` for all branches and for
         registries without branches.
     :param min_count: Number of matching records to wait for.
@@ -48,7 +53,7 @@ class LaminDBRecordSensor(BaseSensorOperator):
         self,
         *,
         registry: str,
-        filter: Mapping[str, Any] | None = None,
+        filter: FilterLike | None = None,
         branch: str | int | None = "main",
         min_count: int = 1,
         limit: int = 100,
@@ -61,8 +66,8 @@ class LaminDBRecordSensor(BaseSensorOperator):
         super().__init__(**kwargs)
         if min_count < 1 or limit < min_count:
             raise ValueError("min_count must be at least 1 and not larger than limit")
-        self.registry = registry
-        self.filter = dict(filter) if filter else None
+        self.registry: str = plain_value(registry)
+        self.filter = normalize_filter(filter)
         self.branch = branch
         self.min_count = min_count
         self.limit = limit
@@ -139,9 +144,9 @@ class LaminDBArtifactSensor(LaminDBRecordSensor):
     :param key: Artifact key, e.g. ``"raw/sample1.fastq.gz"``.
     :param key_prefix: Key prefix, e.g. ``"raw/"``.
     :param suffix: Suffix (or suffixes), e.g. ``".parquet"``.
-    :param kind: Artifact kind (or kinds), e.g. ``"dataset"``.
+    :param kind: Artifact kind (or kinds), e.g. ``ArtifactKind.DATASET``.
     :param include_internal: Also consider artifacts LaminDB creates internally (run logs, ...).
-    :param filter: Additional LaminHub REST filter.
+    :param filter: Additional filter, see :class:`LaminDBRecordSensor`.
     :param wait_for_upload: Ignore artifacts whose upload is still in progress (default).
     """
 

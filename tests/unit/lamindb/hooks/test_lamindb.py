@@ -18,6 +18,7 @@ from airflow.providers.lamindb.hooks.lamindb import (
     parse_instance_slug,
     resolve_registry,
 )
+from airflow.providers.lamindb.utils.filters import ArtifactField, F, LaminDBRegistry
 
 HUB = "https://hub.example.com/api"
 API = "https://api.example.com/api"
@@ -264,6 +265,29 @@ class TestQueries:
             "order_by": [{"field": "created_at", "descending": True}],
             "scope": {"branch_ids": [1]},
         }
+
+    def test_query_records_with_filter_builder(self, hook, mock_api):
+        route = mock_api.post(f"{RECORDS_URL}/core/artifact").mock(return_value=httpx.Response(200, json=[]))
+        hook.query_records(
+            LaminDBRegistry.ARTIFACT,
+            F(ArtifactField.SUFFIX).is_in((".csv", ".tsv")) & (F(ArtifactField.SIZE) > 0),
+            order_by=[ArtifactField.CREATED_AT],
+        )
+        assert request_body(route.calls[0]) == {
+            "filter": {"and": [{"suffix": {"in": [".csv", ".tsv"]}}, {"size": {"gt": 0}}]},
+            "order_by": [{"field": "created_at", "descending": False}],
+        }
+        records = hook.get_records_by_ids("core.artifact", [1], filter=F(ArtifactField.KIND) == "model")
+        assert records == {}
+        assert request_body(route.calls[1])["filter"] == {
+            "and": [{"id": {"in": [1]}}, {"kind": {"eq": "model"}}]
+        }
+
+    def test_query_records_validates_filters(self, hook, mock_api):
+        route = mock_api.post(f"{RECORDS_URL}/core/artifact").mock(return_value=httpx.Response(200, json=[]))
+        with pytest.raises(ValueError, match="Unknown filter operator 'equals'"):
+            hook.query_records("core.artifact", {"suffix": {"equals": ".csv"}})
+        assert not route.called
 
     def test_query_records_default_order(self, hook, mock_api):
         route = mock_api.post(f"{RECORDS_URL}/core/branch").mock(return_value=httpx.Response(200, json=[]))

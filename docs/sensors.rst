@@ -27,18 +27,17 @@ LaminDBRecordSensor
 -------------------
 
 :class:`~airflow.providers.lamindb.sensors.records.LaminDBRecordSensor` waits until at least
-``min_count`` records of a registry match a `LaminHub REST filter <https://docs.lamin.ai/rest>`__ on a
-branch (``branch``, default ``main``). The matching records are returned via XCom: at most ``limit``
-records, newest first.
+``min_count`` records of a registry match a :doc:`filter <filters>` on a branch (``branch``, default
+``main``). The matching records are returned via XCom: at most ``limit`` records, newest first.
 
-.. code-block:: python
+.. literalinclude:: ../tests/system/lamindb/example_lamindb_sensors.py
+    :language: python
+    :dedent: 4
+    :start-after: [START howto_sensor_lamindb_record]
+    :end-before: [END howto_sensor_lamindb_record]
 
-    wait_for_run = LaminDBRecordSensor(
-        task_id="wait_for_run",
-        registry="core.run",
-        filter={"and": [{"transform.key": {"eq": "preprocess.py"}}, {"finished_at": {"isnull": False}}]},
-        deferrable=True,
-    )
+The same filter as a `LaminHub REST filter <https://docs.lamin.ai/rest>`__:
+``{"and": [{"transform.key": {"eq": "preprocess.py"}}, {"_status_code": {"eq": 0}}]}``.
 
 .. _howto/sensor:LaminDBArtifactSensor:
 
@@ -46,8 +45,8 @@ LaminDBArtifactSensor
 ---------------------
 
 :class:`~airflow.providers.lamindb.sensors.records.LaminDBArtifactSensor` waits for artifacts by
-``key``, ``key_prefix``, ``suffix`` or ``kind``, and ignores artifacts whose upload to storage is still
-in progress.
+``key``, ``key_prefix``, ``suffix`` or ``kind`` (e.g. ``ArtifactKind.DATASET``) and an additional
+:doc:`filter <filters>`, and ignores artifacts whose upload to storage is still in progress.
 
 .. literalinclude:: ../tests/system/lamindb/example_lamindb_sensors.py
     :language: python
@@ -62,7 +61,8 @@ LaminDBHook
 REST API directly. Every method also has an async variant with an ``a`` prefix, such as
 ``aquery_records``:
 
-* ``query_records(registry, filter, order_by=..., limit=...)``: query any registry (paginated)
+* ``query_records(registry, filter, order_by=..., limit=...)``: query any registry (paginated) with a
+  :doc:`filter <filters>`
 * ``get_records_by_ids(registry, ids)``
 * ``get_branch(name_or_id)``
 * ``query_dbwrites(filter, after_id=...)``: the database write log

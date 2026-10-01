@@ -11,3 +11,6 @@ Initial release.
   cursors in the asset state store: ``LaminDBRecordEventTrigger``, ``LaminDBArtifactEventTrigger``,
   ``LaminDBBranchStatusEventTrigger`` and ``LaminDBBranchBlockEventTrigger``.
 * Deferrable sensors: ``LaminDBBranchStatusSensor``, ``LaminDBRecordSensor`` and ``LaminDBArtifactSensor``.
+* Filters built in Python with ``F`` and enums for registries (``LaminDBRegistry``), registry fields
+  (``ArtifactField``, ``RunField``, ...), operators (``FilterOperator``) and values (``ArtifactKind``,
+  ``TransformKind``, ``RunStatus``). Filters are validated when a sensor, trigger or hook receives them.

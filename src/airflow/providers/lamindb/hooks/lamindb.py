@@ -12,7 +12,12 @@ import httpx
 
 from airflow.providers.lamindb import __version__
 from airflow.providers.lamindb.exceptions import LaminDBApiError
-from airflow.providers.lamindb.utils.filters import Filter, combine_filters, normalize_order_by
+from airflow.providers.lamindb.utils.filters import (
+    FilterLike,
+    combine_filters,
+    normalize_filter,
+    normalize_order_by,
+)
 from airflow.sdk import BaseHook
 
 if TYPE_CHECKING:
@@ -383,7 +388,7 @@ class LaminDBHook(BaseHook):
         instance: LaminDBInstance,
         registry: Registry,
         *,
-        filter: Filter | None,
+        filter: FilterLike | None,
         select: Sequence[str] | None,
         order_by: Sequence[str | Mapping[str, Any]] | None,
         limit: int,
@@ -395,8 +400,8 @@ class LaminDBHook(BaseHook):
         url = f"{instance.api_url}/instances/{instance.id}/modules/{registry.module}/{registry.model}"
         params = {"limit": limit, "offset": offset, "include_foreign_keys": include_foreign_keys}
         body: dict[str, Any] = {"order_by": normalize_order_by(order_by)}
-        if filter:
-            body["filter"] = dict(filter)
+        if normalized := normalize_filter(filter):
+            body["filter"] = normalized
         if select:
             body["select"] = list(select)
         if search:
@@ -412,7 +417,7 @@ class LaminDBHook(BaseHook):
         return page
 
     @staticmethod
-    def _dbwrite_filter(filter: Filter | None, after_id: int | None) -> dict[str, Any] | None:
+    def _dbwrite_filter(filter: FilterLike | None, after_id: int | None) -> dict[str, Any] | None:
         return combine_filters({"id": {"gt": after_id}} if after_id is not None else None, filter)
 
     @staticmethod
@@ -454,7 +459,7 @@ class LaminDBHook(BaseHook):
     def query_records(
         self,
         registry: str | Registry,
-        filter: Filter | None = None,
+        filter: FilterLike | None = None,
         *,
         select: Sequence[str] | None = None,
         order_by: Sequence[str | Mapping[str, Any]] | None = None,
@@ -467,9 +472,11 @@ class LaminDBHook(BaseHook):
         """
         Query records of a registry.
 
-        :param registry: Registry name such as ``core.artifact``, ``core.run`` or ``bionty.gene``.
-        :param filter: LaminHub REST filter, for example ``{"suffix": {"eq": ".csv"}}``, see
-            https://docs.lamin.ai/rest
+        :param registry: Registry name such as ``core.artifact``, ``core.run`` or ``bionty.gene``,
+            or a :class:`~airflow.providers.lamindb.utils.enums.LaminDBRegistry` member.
+        :param filter: Filter built with :class:`~airflow.providers.lamindb.utils.filters.F`, e.g.
+            ``F(ArtifactField.SUFFIX) == ".csv"``, or a LaminHub REST filter such as
+            ``{"suffix": {"eq": ".csv"}}``, see https://docs.lamin.ai/rest
         :param select: Fields (and relations such as ``created_by(handle)``) to return.
         :param order_by: Sort order, for example ``["-created_at"]``. Defaults to ascending ``id``.
         :param limit: Maximum number of records; requests are paginated in pages of 200.
@@ -502,7 +509,7 @@ class LaminDBHook(BaseHook):
         return results
 
     def get_records_by_ids(
-        self, registry: str | Registry, ids: Iterable[int], filter: Filter | None = None
+        self, registry: str | Registry, ids: Iterable[int], filter: FilterLike | None = None
     ) -> dict[int, dict[str, Any]]:
         """Fetch records by id, optionally restricted by an additional filter. Returns ``{id: record}``."""
         records: dict[int, dict[str, Any]] = {}
@@ -514,7 +521,7 @@ class LaminDBHook(BaseHook):
 
     def query_dbwrites(
         self,
-        filter: Filter | None = None,
+        filter: FilterLike | None = None,
         *,
         after_id: int | None = None,
         limit: int = MAX_PAGE_SIZE,
@@ -588,7 +595,7 @@ class LaminDBHook(BaseHook):
     async def aquery_records(
         self,
         registry: str | Registry,
-        filter: Filter | None = None,
+        filter: FilterLike | None = None,
         *,
         select: Sequence[str] | None = None,
         order_by: Sequence[str | Mapping[str, Any]] | None = None,
@@ -623,7 +630,7 @@ class LaminDBHook(BaseHook):
         return results
 
     async def aget_records_by_ids(
-        self, registry: str | Registry, ids: Iterable[int], filter: Filter | None = None
+        self, registry: str | Registry, ids: Iterable[int], filter: FilterLike | None = None
     ) -> dict[int, dict[str, Any]]:
         """Async version of :meth:`get_records_by_ids`."""
         records: dict[int, dict[str, Any]] = {}
@@ -635,7 +642,7 @@ class LaminDBHook(BaseHook):
 
     async def aquery_dbwrites(
         self,
-        filter: Filter | None = None,
+        filter: FilterLike | None = None,
         *,
         after_id: int | None = None,
         limit: int = MAX_PAGE_SIZE,
