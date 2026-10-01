@@ -269,7 +269,7 @@ The layout follows the provider packages in the `apache/airflow` repository (`pr
 uv sync
 uv run pytest tests/unit                 # lamindb and the LaminHub API mocked
 uv run ruff check . && uv run ruff format --check .
-uv run mypy
+uv run --isolated --python 3.10 mypy    # type-check on the oldest supported Python
 ```
 
 Integration and system tests run against a real lamindb instance:
