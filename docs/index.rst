@@ -15,14 +15,16 @@
     :caption: Guides
 
     Connection types <connections/lamindb>
+    Lineage <lineage>
     Triggers <triggers>
     Sensors <sensors>
     Filters <filters>
 
-Provider package for `LaminDB <https://lamin.ai>`__. It records DAG runs as LaminDB flow runs and tasks
-as steps (see the `README <https://github.com/danplischke/apache-airflow-providers-lamindb#readme>`__),
-and lets DAGs react to changes in LaminDB instances hosted on LaminHub:
+Provider package for `LaminDB <https://lamin.ai>`__. It records DAG runs in LaminDB and lets DAGs react to
+changes in LaminDB instances hosted on LaminHub:
 
+* **Lineage**: record DAG runs as LaminDB flow runs and tasks as steps, with lamindb running in a
+  virtualenv or a Kubernetes pod. See :doc:`lineage`.
 * **Event-driven scheduling**: run DAGs when artifacts or records of any registry are created,
   updated or deleted, when branches (Change Requests) change their status, or when comments and readmes
   are added to branches. See :doc:`triggers`.
