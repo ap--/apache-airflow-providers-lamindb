@@ -51,7 +51,7 @@ def test_discovered_by_providers_manager():
     from airflow.sdk.providers_manager_runtime import ProvidersManagerTaskRuntime
 
     manager = ProvidersManager()
-    assert "apache-airflow-providers-lamindb" in manager.providers
+    assert "lamindb-airflow" in manager.providers
     assert "extra__lamindb__instance" in manager.connection_form_widgets
     hook_info = ProvidersManagerTaskRuntime().hooks["lamindb"]
     assert hook_info is not None

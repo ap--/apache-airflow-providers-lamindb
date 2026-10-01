@@ -1,4 +1,4 @@
-apache-airflow-providers-lamindb
+lamindb-airflow
 ================================
 
 An `Apache Airflow <https://airflow.apache.org>`__ provider for `LaminDB <https://lamin.ai>`__. It
@@ -28,7 +28,7 @@ Installation
 
 .. code-block:: bash
 
-    pip install apache-airflow-providers-lamindb
+    pip install lamindb-airflow
 
 Quick start
 -----------

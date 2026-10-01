@@ -31,7 +31,7 @@ _RETRY_STATUS_CODES = frozenset({429, 500, 502, 503, 504})
 _TOKEN_REFRESH_MARGIN = 60.0
 _DEFAULT_TOKEN_LIFETIME = 600.0
 _MAX_RETRY_DELAY = 60.0
-_USER_AGENT = f"apache-airflow-providers-lamindb/{__version__}"
+_USER_AGENT = f"lamindb-airflow/{__version__}"
 # Only non-sensitive instance settings are kept (the settings endpoint also returns DB credentials).
 _KEPT_SETTINGS = ("id", "owner", "name", "lnid", "api_url", "schema_str", "public", "lamindb_version")
 

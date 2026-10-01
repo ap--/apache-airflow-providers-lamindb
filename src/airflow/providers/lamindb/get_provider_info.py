@@ -6,7 +6,7 @@ from __future__ import annotations
 
 def get_provider_info():
     return {
-        "package-name": "apache-airflow-providers-lamindb",
+        "package-name": "lamindb-airflow",
         "name": "LaminDB",
         "description": "`LaminDB <https://lamin.ai/>`__ event-driven scheduling via the LaminHub REST API.\n",
         "integrations": [
@@ -14,8 +14,8 @@ def get_provider_info():
                 "integration-name": "LaminDB",
                 "external-doc-url": "https://docs.lamin.ai/",
                 "how-to-guide": [
-                    "/docs/apache-airflow-providers-lamindb/triggers.rst",
-                    "/docs/apache-airflow-providers-lamindb/sensors.rst",
+                    "/docs/lamindb-airflow/triggers.rst",
+                    "/docs/lamindb-airflow/sensors.rst",
                 ],
                 "tags": ["service"],
             }

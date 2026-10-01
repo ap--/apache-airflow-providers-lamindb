@@ -3,9 +3,9 @@ requires = ["flit_core>=3.12,<5"]
 build-backend = "flit_core.buildapi"
 
 [project]
-name = "apache-airflow-providers-lamindb"
+name = "lamindb-airflow"
 version = "0.1.0"
-description = "Provider package apache-airflow-providers-lamindb for Apache Airflow"
+description = "Apache Airflow provider for LaminDB: event-driven scheduling via the LaminHub REST API."
 readme = "README.rst"
 license = "Apache-2.0"
 license-files = ["LICENSE", "NOTICE"]

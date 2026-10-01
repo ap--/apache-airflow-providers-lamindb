@@ -1,5 +1,5 @@
-``apache-airflow-providers-lamindb``
-====================================
+``lamindb-airflow``
+===================
 
 .. toctree::
     :hidden:
@@ -53,4 +53,4 @@ Installation
 
 .. code-block:: bash
 
-    pip install apache-airflow-providers-lamindb
+    pip install lamindb-airflow
