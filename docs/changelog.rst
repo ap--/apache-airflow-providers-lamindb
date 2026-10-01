@@ -6,6 +6,9 @@ Changelog
 
 Initial release.
 
+* Lineage: DAG runs are recorded as LaminDB flow runs and tasks as steps with
+  ``LaminDBFlowInitOperator``, ``LaminDBFlowFinishOperator``, ``LaminDBStepOperator``, their virtualenv
+  variants and the ``@task.lamindb``, ``@task.lamindb_venv`` and ``@task.lamindb_k8s`` decorators.
 * ``LaminDBHook`` and the ``lamindb`` connection type for the LaminHub REST API.
 * Event triggers for event-driven scheduling based on the LaminHub database write log, with
   cursors in the asset state store: ``LaminDBRecordEventTrigger``, ``LaminDBArtifactEventTrigger``,

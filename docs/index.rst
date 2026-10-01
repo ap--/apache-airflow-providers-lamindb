@@ -19,8 +19,9 @@
     Sensors <sensors>
     Filters <filters>
 
-Provider package for `LaminDB <https://lamin.ai>`__. It lets DAGs react to changes in LaminDB instances
-hosted on LaminHub:
+Provider package for `LaminDB <https://lamin.ai>`__. It records DAG runs as LaminDB flow runs and tasks
+as steps (see the `README <https://github.com/danplischke/apache-airflow-providers-lamindb#readme>`__),
+and lets DAGs react to changes in LaminDB instances hosted on LaminHub:
 
 * **Event-driven scheduling**: run DAGs when artifacts or records of any registry are created,
   updated or deleted, when branches (Change Requests) change their status, or when comments and readmes
@@ -38,15 +39,18 @@ Requirements
 The minimum Apache Airflow version supported by this provider is ``3.3.0``, which introduced the asset
 state store that the event triggers use to resume after restarts.
 
-==================  ==================
-PIP package         Version required
-==================  ==================
-``apache-airflow``  ``>=3.3.0``
-``httpx``           ``>=0.27.0``
-==================  ==================
+=======================================  ==================
+PIP package                              Version required
+=======================================  ==================
+``apache-airflow``                       ``>=3.3.0``
+``apache-airflow-providers-standard``
+``httpx``                                ``>=0.27.0``
+=======================================  ==================
 
-The provider talks to the `LaminHub REST API <https://docs.lamin.ai/rest>`__ and doesn't require the
-``lamindb`` Python package. Use ``lamindb`` in your tasks to load artifacts.
+The triggers, sensors and hook talk to the `LaminHub REST API <https://docs.lamin.ai/rest>`__ and don't
+require the ``lamindb`` Python package. In-process lineage steps need it on the worker
+(``pip install "lamindb-airflow[lamindb]"``); ``@task.lamindb_k8s`` needs
+``pip install "lamindb-airflow[cncf.kubernetes]"``.
 
 Installation
 ------------
