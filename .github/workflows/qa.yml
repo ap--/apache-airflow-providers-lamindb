@@ -160,7 +160,7 @@ jobs:
           HOME: ${{ runner.temp }}/lamin-home
           AIRFLOW_HOME: ${{ runner.temp }}/airflow
           AIRFLOW__CORE__LOAD_EXAMPLES: "False"
-          AIRFLOW__CORE__DAGS_FOLDER: ${{ github.workspace }}/tests/system
+          AIRFLOW__CORE__DAGS_FOLDER: ${{ github.workspace }}/tests/system/lamindb
         run: |
           mkdir -p "$HOME"
           uv run --no-sync lamin init --storage "$HOME/store" --name airflowtest
@@ -171,7 +171,7 @@ jobs:
           HOME: ${{ runner.temp }}/lamin-home
           AIRFLOW_HOME: ${{ runner.temp }}/airflow
           AIRFLOW__CORE__LOAD_EXAMPLES: "False"
-          AIRFLOW__CORE__DAGS_FOLDER: ${{ github.workspace }}/tests/system
+          AIRFLOW__CORE__DAGS_FOLDER: ${{ github.workspace }}/tests/system/lamindb
           LAMINDB_E2E_TEST: "1"
         run: uv run --no-sync pytest tests/system -v
 

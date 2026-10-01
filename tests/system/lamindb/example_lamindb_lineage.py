@@ -1,4 +1,4 @@
-"""Example DAGs for lamindb-airflow, run by test_example_dags.py through dag.test()."""
+"""Example DAGs for lamindb-airflow, run by test_example_lamindb_lineage.py through dag.test()."""
 
 import lamindb as ln
 from airflow.sdk import DAG, task

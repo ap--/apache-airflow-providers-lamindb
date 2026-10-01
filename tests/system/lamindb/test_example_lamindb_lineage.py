@@ -9,7 +9,7 @@ Requires a throwaway LaminDB instance and a migrated Airflow metadata DB::
     export HOME=/tmp/lamin-home  # keeps ~/.lamin away from your real settings
     lamin init --storage /tmp/lamin-home/store --name airflowtest
     export AIRFLOW_HOME=/tmp/airflow-e2e AIRFLOW__CORE__LOAD_EXAMPLES=False
-    export AIRFLOW__CORE__DAGS_FOLDER=$PWD/tests/system  # dag.test() needs the DAG serialized
+    export AIRFLOW__CORE__DAGS_FOLDER=$PWD/tests/system/lamindb  # dag.test() needs the DAG serialized
     airflow db migrate
     LAMINDB_E2E_TEST=1 pytest tests/system
 """
@@ -30,13 +30,13 @@ pytestmark = pytest.mark.skipif(
     reason="Set LAMINDB_E2E_TEST=1 (needs a lamindb instance and a migrated Airflow DB)",
 )
 
-DAG_FILE = Path(__file__).parent / "example_lamindb.py"
+DAG_FILE = Path(__file__).parent / "example_lamindb_lineage.py"
 
 
 @pytest.fixture(scope="module")
 def dags():
     # generated module name, as Airflow's DAG bundle loader does
-    spec = importlib.util.spec_from_file_location("unusual_prefix_e2e_example_lamindb", DAG_FILE)
+    spec = importlib.util.spec_from_file_location("unusual_prefix_e2e_example_lamindb_lineage", DAG_FILE)
     module = importlib.util.module_from_spec(spec)
     sys.modules[spec.name] = module
     spec.loader.exec_module(module)

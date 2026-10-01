@@ -35,10 +35,13 @@ def test_provider_info_schema():
 
 def test_modules_and_hooks_are_importable():
     info = get_provider_info()
-    for section in ("hooks", "triggers", "sensors"):
+    for section in ("operators", "hooks", "triggers", "sensors"):
         for entry in info[section]:
             for module in entry["python-modules"]:
                 importlib.import_module(module)
+    for decorator in info["task-decorators"]:
+        module, _, name = decorator["class-name"].rpartition(".")
+        assert callable(getattr(importlib.import_module(module), name))
     for connection_type in info["connection-types"]:
         module, _, name = connection_type["hook-class-name"].rpartition(".")
         hook_class = getattr(importlib.import_module(module), name)

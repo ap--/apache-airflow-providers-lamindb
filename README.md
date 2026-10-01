@@ -281,7 +281,7 @@ lamin init --storage /tmp/lamin-home/store --name airflowtest
 LAMINDB_INTEGRATION_TEST=1 pytest tests/integration   # operators against a real instance
 
 export AIRFLOW_HOME=/tmp/airflow-e2e AIRFLOW__CORE__LOAD_EXAMPLES=False
-export AIRFLOW__CORE__DAGS_FOLDER=$PWD/tests/system
+export AIRFLOW__CORE__DAGS_FOLDER=$PWD/tests/system/lamindb
 airflow db migrate
 LAMINDB_E2E_TEST=1 pytest tests/system             # dag.test(): real task runner + virtualenv
 ```
