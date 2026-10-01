@@ -47,10 +47,10 @@ dev = [
 ]
 
 [project.urls]
-"Documentation" = "https://github.com/ap--/apache-airflow-providers-lamindb/tree/main/docs"
-"Changelog" = "https://github.com/ap--/apache-airflow-providers-lamindb/blob/main/docs/changelog.rst"
-"Source Code" = "https://github.com/ap--/apache-airflow-providers-lamindb"
-"Bug Tracker" = "https://github.com/ap--/apache-airflow-providers-lamindb/issues"
+"Documentation" = "https://github.com/danplischke/apache-airflow-providers-lamindb/tree/main/docs"
+"Changelog" = "https://github.com/danplischke/apache-airflow-providers-lamindb/blob/main/docs/changelog.rst"
+"Source Code" = "https://github.com/danplischke/apache-airflow-providers-lamindb"
+"Bug Tracker" = "https://github.com/danplischke/apache-airflow-providers-lamindb/issues"
 
 [project.entry-points."apache_airflow_provider"]
 provider_info = "airflow.providers.lamindb.get_provider_info:get_provider_info"
