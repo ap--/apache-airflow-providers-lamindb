@@ -22,7 +22,7 @@ def _lamindb_k8s_decorated_operator_class() -> type:
         def __init__(self, **kwargs: Any) -> None:
             super().__init__(**kwargs)
             if self.auto_flow:
-                wire_flow_tasks(self, venv=True, lamindb_instance=self.lamindb_instance)
+                wire_flow_tasks(self, lamindb_instance=self.lamindb_instance)
 
     return LaminDBK8sDecoratedOperator
 

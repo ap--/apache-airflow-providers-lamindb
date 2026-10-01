@@ -24,10 +24,7 @@ def get_provider_info() -> dict[str, object]:
         "operators": [
             {
                 "integration-name": "LaminDB",
-                "python-modules": [
-                    "airflow.providers.lamindb.operators.flow",
-                    "airflow.providers.lamindb.operators.step",
-                ],
+                "python-modules": ["airflow.providers.lamindb.operators.flow"],
             }
         ],
         "hooks": [
@@ -80,7 +77,6 @@ def get_provider_info() -> dict[str, object]:
             }
         ],
         "task-decorators": [
-            {"name": "lamindb", "class-name": "airflow.providers.lamindb.decorators.python.lamindb_task"},
             {
                 "name": "lamindb_venv",
                 "class-name": "airflow.providers.lamindb.decorators.python_virtualenv.lamindb_venv_task",

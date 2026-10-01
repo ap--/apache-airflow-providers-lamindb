@@ -22,26 +22,19 @@ def step():
 
 
 def test_task_decorators_registered() -> None:
-    assert all(hasattr(task, name) for name in ("lamindb", "lamindb_venv", "lamindb_k8s"))
+    assert all(hasattr(task, name) for name in ("lamindb_venv", "lamindb_k8s"))
+    # the in-process variant needed lamindb on the worker and was removed
+    assert not hasattr(task, "lamindb")
 
 
-def test_task_lamindb_builds_operator() -> None:
-    op = _single_task(task.lamindb, step)
-    assert type(op).__name__ == "LaminDBDecoratedOperator"
-    assert op.custom_operator_name == "@task.lamindb"
-    assert op.python_callable is step
-
-
-def test_task_lamindb_keeps_xcom_args_and_dependencies() -> None:
-    """Regression: the step operator must not reset op_args set by the TaskFlow decorator."""
-
+def test_task_lamindb_venv_keeps_xcom_args_and_dependencies() -> None:
     @dag
     def test_dag():
         @task
         def produce():
             return 1
 
-        @task.lamindb
+        @task.lamindb_venv
         def consume(value):
             return value
 
@@ -90,11 +83,10 @@ def test_remote_step_ships_wrapped_source_only_during_execute(fake_lamindb: Magi
 def test_untracked_steps_are_plain_tasks() -> None:
     @dag
     def test_dag():
-        task.lamindb(track=False)(step)()
         task.lamindb_venv(track=False, requirements=["pandas"], task_id="venv_step")(step)()
 
     built = test_dag()
-    assert sorted(built.task_ids) == ["step", "venv_step"]
+    assert built.task_ids == ["venv_step"]
     assert built.get_task("venv_step").requirements == ["pandas"]
 
 

@@ -39,7 +39,6 @@ class LaminDBVenvDecoratedOperator(RemoteLaminDBStepMixin, _PythonVirtualenvDeco
         if self.auto_flow:
             wire_flow_tasks(
                 self,
-                venv=True,
                 lamindb_instance=self.lamindb_instance,
                 requirements=[r for r in self.requirements if is_lamindb_requirement(r)],
                 **{name: getattr(self, name) for name in _SHARED_VENV_ARGS if hasattr(self, name)},

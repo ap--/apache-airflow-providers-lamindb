@@ -47,10 +47,9 @@ PIP package                              Version required
 ``httpx``                                ``>=0.27.0``
 =======================================  ==================
 
-The triggers, sensors and hook talk to the `LaminHub REST API <https://docs.lamin.ai/rest>`__ and don't
-require the ``lamindb`` Python package. In-process lineage steps need it on the worker
-(``pip install "lamindb-airflow[lamindb]"``); ``@task.lamindb_k8s`` needs
-``pip install "lamindb-airflow[cncf.kubernetes]"``.
+The worker doesn't need the ``lamindb`` Python package. The triggers, sensors and hook talk to the
+`LaminHub REST API <https://docs.lamin.ai/rest>`__, and the lineage operators run lamindb in a virtualenv
+or a Kubernetes pod. ``@task.lamindb_k8s`` needs ``pip install "lamindb-airflow[cncf.kubernetes]"``.
 
 Installation
 ------------

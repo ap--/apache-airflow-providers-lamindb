@@ -1,9 +1,9 @@
 """LaminDB run bookkeeping shared by the worker and remote interpreters.
 
-This module is imported in-process on the worker and also shipped *as source* to
-virtualenvs and pods, which may have neither Airflow nor this package installed.
-Keep it self-contained: standard library and ``lamindb`` only, imported inside
-functions.
+This module is shipped *as source* to virtualenvs and pods, which may have neither
+Airflow nor this package installed. Keep it self-contained: standard library and
+``lamindb`` only, imported inside functions, so the worker can import it without
+lamindb.
 
 Mapping:
 

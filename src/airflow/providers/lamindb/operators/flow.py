@@ -1,8 +1,11 @@
-"""Operators that open and close the LaminDB flow run of a DAG run."""
+"""Operators that open and close the LaminDB flow run of a DAG run.
+
+Both run LaminDB inside a virtualenv, so the worker needs no lamindb.
+"""
 
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from airflow.providers.lamindb.utils.dag_run import (
     context_flow_run_reference,
@@ -16,67 +19,14 @@ from airflow.providers.lamindb.utils.remote import (
     worker_instance_slug,
 )
 from airflow.providers.standard.operators.python import PythonVirtualenvOperator
-from airflow.sdk import BaseOperator, TriggerRule
+from airflow.sdk import TriggerRule
+
+if TYPE_CHECKING:
+    from airflow.sdk import BaseOperator
 
 # Airflow's BaseOperatorMeta only wraps __init__ of BaseOperator subclasses and expects
 # the most-derived class to define one, so each operator repeats its own __init__
 # rather than inheriting it from a shared mixin.
-
-
-class LaminDBFlowInitOperator(BaseOperator):
-    """Start the LaminDB flow run for this DAG run, in the worker process.
-
-    Creates (or restarts, on retry) a ``Run`` of the DAG file's ``Transform`` and tags
-    it with the DAG run so downstream LaminDB steps can find it. Step operators add
-    and wire one automatically; declare it yourself (before the steps) to configure
-    it. Returns the flow run uid.
-
-    Marked as an Airflow *setup* task by default, pairing with the *teardown*
-    ``LaminDBFlowFinishOperator``; pass ``is_setup=False`` to opt out. Needs lamindb
-    on the worker; see ``LaminDBVenvFlowInitOperator`` otherwise.
-    """
-
-    def __init__(self, *, task_id: str = "lamindb_flow_init", is_setup: bool = True, **kwargs: Any) -> None:
-        super().__init__(task_id=task_id, **kwargs)
-        if is_setup:
-            self.as_setup()
-
-    def execute(self, context: Any) -> str:
-        from airflow.providers.lamindb.utils.context import require_lamindb, start_flow_run
-
-        require_lamindb()
-        return start_flow_run(context).uid
-
-
-class LaminDBFlowFinishOperator(BaseOperator):
-    """Close the LaminDB flow run with the DAG run's outcome, in the worker process.
-
-    Marked as an Airflow *teardown* task by default: it runs after every other task
-    (``trigger_rule=all_done_setup_success``) and is ignored when Airflow decides the
-    DAG run state, so a failed step still fails the DAG run. Marks the flow run
-    errored if any other task in the DAG run failed. Step operators wire it
-    downstream of themselves (``init >> steps >> finish``). Pass ``is_teardown=False`` together
-    with your own ``trigger_rule`` to opt out. Needs lamindb on the worker; see
-    ``LaminDBVenvFlowFinishOperator`` otherwise.
-    """
-
-    def __init__(
-        self, *, task_id: str = "lamindb_flow_finish", is_teardown: bool = True, **kwargs: Any
-    ) -> None:
-        if not is_teardown:
-            kwargs.setdefault("trigger_rule", TriggerRule.ALL_DONE)
-        super().__init__(task_id=task_id, **kwargs)
-        if is_teardown:
-            self.as_teardown()
-
-    def execute(self, context: Any) -> str:
-        from airflow.providers.lamindb.utils.context import require_flow_run, require_lamindb
-        from airflow.providers.lamindb.utils.runtime import finish_run
-
-        require_lamindb()
-        flow_run = require_flow_run(context)
-        finish_run(flow_run, not dag_run_failed(context, self.task_id, self.log))
-        return flow_run.uid
 
 
 def lamindb_airflow_flow_task(lamindb_airflow_config: dict[str, Any]) -> str:
@@ -132,10 +82,17 @@ class _LaminDBVenvFlowOperator(PythonVirtualenvOperator):
 
 
 class LaminDBVenvFlowInitOperator(_LaminDBVenvFlowOperator):
-    """``LaminDBFlowInitOperator`` that talks to LaminDB from a virtualenv.
+    """Start the LaminDB flow run for this DAG run, in a virtualenv.
 
-    The worker needs no lamindb. Accepts every ``PythonVirtualenvOperator`` argument
-    except ``python_callable``, ``op_args`` and ``op_kwargs``.
+    Creates (or restarts, on retry) a ``Run`` of the DAG file's ``Transform`` and tags
+    it with the DAG run so downstream LaminDB steps can find it. Step decorators add
+    and wire one automatically; declare it yourself (before the steps) to configure
+    it. Returns the flow run uid.
+
+    Marked as an Airflow *setup* task by default, pairing with the *teardown*
+    ``LaminDBVenvFlowFinishOperator``; pass ``is_setup=False`` to opt out. Accepts
+    every ``PythonVirtualenvOperator`` argument except ``python_callable``,
+    ``op_args`` and ``op_kwargs``.
     """
 
     _runtime_function = "start_flow_run"
@@ -156,10 +113,16 @@ class LaminDBVenvFlowInitOperator(_LaminDBVenvFlowOperator):
 
 
 class LaminDBVenvFlowFinishOperator(_LaminDBVenvFlowOperator):
-    """``LaminDBFlowFinishOperator`` that talks to LaminDB from a virtualenv.
+    """Close the LaminDB flow run with the DAG run's outcome, in a virtualenv.
 
-    The worker needs no lamindb. Accepts every ``PythonVirtualenvOperator`` argument
-    except ``python_callable``, ``op_args`` and ``op_kwargs``.
+    Marked as an Airflow *teardown* task by default: it runs after every other task
+    (``trigger_rule=all_done_setup_success``) and is ignored when Airflow decides the
+    DAG run state, so a failed step still fails the DAG run. Marks the flow run
+    errored if any other task in the DAG run failed. Step decorators wire it
+    downstream of themselves (``init >> steps >> finish``). Pass ``is_teardown=False``
+    together with your own ``trigger_rule`` to opt out. Accepts every
+    ``PythonVirtualenvOperator`` argument except ``python_callable``, ``op_args`` and
+    ``op_kwargs``.
     """
 
     _runtime_function = "finish_flow_run"
@@ -180,30 +143,24 @@ class LaminDBVenvFlowFinishOperator(_LaminDBVenvFlowOperator):
         }
 
 
-_INIT_OPERATORS = (LaminDBFlowInitOperator, LaminDBVenvFlowInitOperator)
-_FINISH_OPERATORS = (LaminDBFlowFinishOperator, LaminDBVenvFlowFinishOperator)
-
-
-def wire_flow_tasks(step: BaseOperator, *, venv: bool, **flow_kwargs: Any) -> None:
+def wire_flow_tasks(step: BaseOperator, **flow_kwargs: Any) -> None:
     """Wire ``init >> step >> finish``, adding the DAG's flow init/finish tasks on first use.
 
-    Called by the step operators at DAG parse time. Flow operators already in the DAG
-    are reused, so the first LaminDB step decides whether they run in the worker
-    process or in a virtualenv (``venv``, built with ``flow_kwargs``). Declare the flow
-    operators yourself before the steps to control that.
+    Called by the step decorators at DAG parse time. Flow operators already in the DAG
+    are reused, so the first LaminDB step decides their virtualenv settings
+    (``flow_kwargs``). Declare the flow operators yourself before the steps to control
+    them.
     """
     dag = step.get_dag()
     # tasks unmapped at run time were wired as a mapped task at parse time, if at all
     if dag is None or getattr(step, "_BaseOperator__from_mapped", False):
         return
-    init = next((t for t in dag.tasks if isinstance(t, _INIT_OPERATORS)), None)
-    finish = next((t for t in dag.tasks if isinstance(t, _FINISH_OPERATORS)), None)
+    init = next((t for t in dag.tasks if isinstance(t, LaminDBVenvFlowInitOperator)), None)
+    finish = next((t for t in dag.tasks if isinstance(t, LaminDBVenvFlowFinishOperator)), None)
     # the root task group keeps the default task ids when the first step sits in a group
     if init is None:
-        init_class = LaminDBVenvFlowInitOperator if venv else LaminDBFlowInitOperator
-        init = init_class(dag=dag, task_group=dag.task_group, **flow_kwargs)
+        init = LaminDBVenvFlowInitOperator(dag=dag, task_group=dag.task_group, **flow_kwargs)
     if finish is None:
-        finish_class = LaminDBVenvFlowFinishOperator if venv else LaminDBFlowFinishOperator
-        finish = finish_class(dag=dag, task_group=dag.task_group, **flow_kwargs)
+        finish = LaminDBVenvFlowFinishOperator(dag=dag, task_group=dag.task_group, **flow_kwargs)
         init >> finish
     init >> step >> finish

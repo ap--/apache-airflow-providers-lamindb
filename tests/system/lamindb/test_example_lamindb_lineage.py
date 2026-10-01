@@ -1,8 +1,8 @@
 """End-to-end test through Airflow's real task runner (``dag.test()``).
 
-Covers what neither the mocked nor the operator-level integration tests can: XCom
-resolution between tasks, setup/teardown semantics for the DAG run state, and the
-real ``PythonVirtualenvOperator`` creating a venv and running the shipped wrapper.
+Covers what neither the mocked nor the integration tests can: XCom resolution between
+tasks, setup/teardown semantics for the DAG run state, and the real
+``PythonVirtualenvOperator`` creating a venv and running the shipped wrapper.
 
 Requires a throwaway LaminDB instance and a migrated Airflow metadata DB::
 
@@ -51,7 +51,7 @@ def flow_and_steps(dag_id: str, run_id: str):
     return flow, steps
 
 
-def test_dag_run_success_including_virtualenv_step(dags):
+def test_dag_run_success(dags):
     dr = dags.dag_ok.test()
     assert str(dr.state) == "success"
 
@@ -59,15 +59,14 @@ def test_dag_run_success_including_virtualenv_step(dags):
     assert flow.status == "completed"
     assert flow.transform.kind == "script"
     assert flow.transform.source_code is not None
-    assert set(steps) == {"extract", "transform", "load", "venv_step"}
+    assert set(steps) == {"extract", "transform", "report"}  # load is a plain task
     for step in steps.values():
         assert step.status == "completed"
         assert step.transform.uid == flow.transform.uid
+        assert step.reference_type == "airflow_task_instance"
     assert steps["extract"].params == {"count": 3}
-    assert steps["transform"].params == {"data": {"count": 3}}  # XCom from extract
-    assert steps["load"].params == {"data": {"count": 6}}  # XCom via @task.lamindb
-    assert steps["venv_step"].params == {"value": 7}  # XCom into the virtualenv
-    assert steps["venv_step"].reference_type == "airflow_task_instance"
+    assert steps["transform"].params == {"data": {"count": 3}}  # XCom between virtualenvs
+    assert steps["report"].params == {"value": 7}  # XCom from a plain task
 
 
 def test_failed_step_fails_dag_run_and_flow(dags):
@@ -80,12 +79,12 @@ def test_failed_step_fails_dag_run_and_flow(dags):
     assert steps["boom"].status == "errored"
 
 
-def test_venv_only_dag_run(dags):
-    assert type(dags.dag_venv_only.get_task("lamindb_flow_init")).__name__ == "LaminDBVenvFlowInitOperator"
-    dr = dags.dag_venv_only.test()
+def test_auto_flow_dag_run(dags):
+    assert dags.dag_auto_flow.get_task("lamindb_flow_init").system_site_packages is True
+    dr = dags.dag_auto_flow.test()
     assert str(dr.state) == "success"
 
-    flow, steps = flow_and_steps("lamindb_example_venv_only", dr.run_id)
+    flow, steps = flow_and_steps("lamindb_example_auto_flow", dr.run_id)
     assert flow.status == "completed"
     assert set(steps) == {"venv_extract", "venv_double"}
     assert all(step.status == "completed" for step in steps.values())

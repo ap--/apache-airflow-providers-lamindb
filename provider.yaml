@@ -21,7 +21,6 @@ operators:
   - integration-name: LaminDB
     python-modules:
       - airflow.providers.lamindb.operators.flow
-      - airflow.providers.lamindb.operators.step
 
 hooks:
   - integration-name: LaminDB
@@ -69,8 +68,6 @@ connection-types:
         instance: owner/name
 
 task-decorators:
-  - name: lamindb
-    class-name: airflow.providers.lamindb.decorators.python.lamindb_task
   - name: lamindb_venv
     class-name: airflow.providers.lamindb.decorators.python_virtualenv.lamindb_venv_task
   - name: lamindb_k8s

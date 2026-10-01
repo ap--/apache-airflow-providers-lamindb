@@ -1,4 +1,4 @@
-"""The package must work on a worker without lamindb, as long as only the venv/k8s variants run."""
+"""The package must work on a worker without lamindb: LaminDB only runs in virtualenvs and pods."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from airflow.providers.lamindb.operators.flow import LaminDBFlowInitOperator, LaminDBVenvFlowInitOperator
+from airflow.providers.lamindb.operators.flow import LaminDBVenvFlowInitOperator
 from airflow.providers.lamindb.utils import remote
 
 
@@ -29,16 +29,10 @@ def test_import_does_not_need_lamindb() -> None:
         "import sys\n"
         "sys.modules['lamindb'] = sys.modules['lamindb_setup'] = None\n"
         "import airflow.providers.lamindb, airflow.providers.lamindb.get_provider_info\n"
-        "import airflow.providers.lamindb.decorators.python\n"
         "import airflow.providers.lamindb.decorators.python_virtualenv\n"
         "import airflow.providers.lamindb.decorators.kubernetes\n"
     )
     subprocess.run([sys.executable, "-c", code], check=True)
-
-
-def test_in_process_operator_explains_missing_lamindb(no_lamindb: None, make_context) -> None:
-    with pytest.raises(ImportError, match=r"lamindb-airflow\[lamindb\].*LaminDBVenvFlowInitOperator"):
-        LaminDBFlowInitOperator().execute(make_context())
 
 
 def test_venv_operator_works_without_lamindb_on_worker(no_lamindb: None, make_context) -> None:

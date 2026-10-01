@@ -3,29 +3,31 @@
 An [Apache Airflow](https://airflow.apache.org) 3 provider for [LaminDB](https://lamin.ai) with two parts:
 
 - **[Lineage](#lineage-dag-runs-as-flows-tasks-as-steps)**: records DAG runs as LaminDB flow runs and
-  tasks as steps, with operators and `@task.lamindb*` decorators built on the `lamindb` package.
+  tasks as steps, with flow operators and `@task.lamindb_venv` / `@task.lamindb_k8s` decorators that
+  run lamindb in a virtualenv or a Kubernetes pod.
 - **[Event-driven scheduling](#event-driven-scheduling)**: triggers DAGs on changes in LaminDB instances
   hosted on LaminHub, with triggers, sensors, filters and a hook for the
   [LaminHub REST API](https://docs.lamin.ai/rest).
 
+The worker never needs the `lamindb` package.
+
 ## Installation
 
 ```bash
-pip install lamindb-airflow                     # triggers, sensors and virtualenv steps: the worker needs no lamindb
-pip install "lamindb-airflow[lamindb]"          # adds in-process steps (@task.lamindb, LaminDBStepOperator)
+pip install lamindb-airflow
 pip install "lamindb-airflow[cncf.kubernetes]"  # adds @task.lamindb_k8s
 ```
 
 Requires `apache-airflow>=3.3.0` and `apache-airflow-providers-standard`. Airflow 3.3.0 added the asset
 state store that the event triggers use to resume after restarts.
 
-Wherever lamindb runs (worker, virtualenv or pod) it must be able to connect to the instance, for
-example via `LAMIN_API_KEY` and `LAMIN_CURRENT_INSTANCE`. Version compatibility with lamindb is
-constrained by Airflow's and lamindb's shared `universal-pathlib` pin, not by this package. Tested end
-to end with Airflow 3.3.2 + lamindb 2.10.0.
+Lineage tasks install lamindb in their own virtualenv or use the pod's image, so its version does not
+have to fit Airflow's dependencies. There, lamindb must be able to connect to the instance, for
+example via `LAMIN_API_KEY` and `LAMIN_CURRENT_INSTANCE`. Tested end to end with Airflow 3.3.2 +
+lamindb 2.10.0.
 
 The event triggers and sensors need a LaminDB instance hosted on LaminHub and a `lamindb` connection
-(see [Event-driven scheduling](#event-driven-scheduling)), but not the `lamindb` package.
+(see [Event-driven scheduling](#event-driven-scheduling)).
 
 ## Lineage: DAG runs as flows, tasks as steps
 
@@ -38,36 +40,26 @@ The event triggers and sensors need a LaminDB instance hosted on LaminHub and a 
 ### Usage
 
 ```python
-import lamindb as ln
 from airflow.sdk import DAG, task
 
-from airflow.providers.lamindb import LaminDBStepOperator
-
-
-def extract(count: int = 10) -> dict:
-    return {"count": count}
-
-
-@ln.step()  # optional: an already-decorated function is used as is
-def transform(data: dict) -> dict:
-    return {"count": data["count"] * 2}
-
-
 with DAG("my_pipeline") as dag:
-    t1 = LaminDBStepOperator(task_id="extract", python_callable=extract, op_kwargs={"count": 3})
-    t2 = LaminDBStepOperator(task_id="transform", python_callable=transform, op_args=[t1.output])
 
-    @task.lamindb
-    def load(data: dict) -> int:
-        return data["count"]
+    @task.lamindb_venv
+    def extract(count: int = 10) -> dict:
+        return {"count": count}
+
+    @task
+    def double(data: dict) -> dict:
+        # a plain Airflow task: not recorded in LaminDB
+        return {"count": data["count"] * 2}
 
     @task.lamindb_venv(requirements=["pandas"])
-    def report(count: int) -> None:
+    def report(data: dict) -> None:
         import pandas as pd
 
-        print(pd.Series([count]).describe())
+        print(pd.Series([data["count"]]).describe())
 
-    t1 >> t2 >> report(load(t2.output))
+    report(double(extract(count=3)))
 ```
 
 Each step adds the DAG's `lamindb_flow_init` and `lamindb_flow_finish` tasks on first use
@@ -75,22 +67,23 @@ and wires `init >> step >> finish` (`auto_flow=True`). To configure them, declar
 yourself before the steps; they are reused:
 
 ```python
-from airflow.providers.lamindb import LaminDBFlowFinishOperator, LaminDBFlowInitOperator
+from airflow.providers.lamindb import LaminDBVenvFlowFinishOperator, LaminDBVenvFlowInitOperator
 
 with DAG("my_pipeline") as dag:
-    init = LaminDBFlowInitOperator(retries=3)
-    finish = LaminDBFlowFinishOperator()
+    init = LaminDBVenvFlowInitOperator(retries=3)
+    finish = LaminDBVenvFlowFinishOperator()
     ...
 ```
 
 How it works:
 
-- The flow init task calls `ln.track()` on the DAG file and tags the run with the DAG
-  run id. Retrying it restarts the same run instead of creating a second one.
+- The flow init task calls `ln.track()` on the DAG file in a virtualenv and tags the run
+  with the DAG run id. Retrying it restarts the same run instead of creating a second one.
 - Every step looks the flow run up by that tag. No XCom plumbing, any DAG topology. A
   step whose flow init has not run fails with a clear error.
-- The step callable is wrapped with `ln.step()` at execution time, so lamindb records
-  source, parameters and outcome and links the step run to the flow run.
+- In its virtualenv or pod, each step calls `ln.track()` with the DAG file's source and
+  `initiated_by_run=` the flow run, so lamindb records its parameters and outcome as a
+  step run of the same transform.
 - The flow finish task closes the flow run as `completed`, or `errored` if any task in
   the DAG run failed.
 - Init is an Airflow *setup* task and finish a *teardown* task. Finish therefore runs
@@ -100,9 +93,10 @@ How it works:
 
 Auto-wiring caveats:
 
-- The first LaminDB step decides the kind of flow tasks: in-process for
-  `LaminDBStepOperator` / `@task.lamindb`, virtualenv for `@task.lamindb_venv` (copying
-  its Python version, index, lamindb pin and env settings) and `@task.lamindb_k8s`.
+- The first LaminDB step decides the settings of the auto-added flow tasks: a
+  `@task.lamindb_venv` step passes on its Python version, index, lamindb pin and env
+  settings. The flow tasks of `@task.lamindb_k8s` steps run in a default virtualenv on
+  the worker.
 - Mapped steps (`.expand()`) are not auto-wired. Declare the flow operators and wire
   `init >> mapped_step >> finish` yourself.
 - Flow operators declared *after* an auto-wiring step clash with the auto-added task id;
@@ -112,30 +106,27 @@ Auto-wiring caveats:
 
 ### Operators and decorators
 
-| | needs lamindb on the worker |
-|---|---|
-| `LaminDBFlowInitOperator(task_id="lamindb_flow_init")` | yes |
-| `LaminDBFlowFinishOperator(task_id="lamindb_flow_finish")` | yes |
-| `LaminDBVenvFlowInitOperator(...)`, `LaminDBVenvFlowFinishOperator(...)` – same, in a virtualenv; accept `PythonVirtualenvOperator` arguments | no |
-| `LaminDBStepOperator(task_id, python_callable, op_args=None, op_kwargs=None)` | yes |
-| `@task.lamindb` – TaskFlow variant of `LaminDBStepOperator` | yes |
-| `@task.lamindb_venv(...)` – like `@task.virtualenv`; the function runs as a step in the virtualenv | no |
-| `@task.lamindb_k8s(image=..., ...)` – like `@task.kubernetes`; the image needs lamindb and credentials | no |
+- `LaminDBVenvFlowInitOperator(task_id="lamindb_flow_init", ...)` and
+  `LaminDBVenvFlowFinishOperator(task_id="lamindb_flow_finish", ...)` open and close the
+  flow run in a virtualenv; they accept `PythonVirtualenvOperator` arguments.
+- `@task.lamindb_venv(...)` works like `@task.virtualenv`; the function runs as a step in
+  the virtualenv.
+- `@task.lamindb_k8s(image=..., ...)` works like `@task.kubernetes`; the image needs
+  lamindb and credentials for the instance.
 
-All step operators accept `auto_flow` and `track`. `track=False` runs the function as the
-plain Airflow equivalent (`@task`, `@task.virtualenv`, `@task.kubernetes`): no step run, no
-flow wiring, and no lamindb needed; an `@ln.step()`-decorated callable is called unwrapped.
-The virtualenv and pod variants also accept
-`lamindb_instance`, the instance slug to connect to (default: the worker's instance if
-lamindb is set up there, else `LAMIN_CURRENT_INSTANCE`). The virtualenv variants accept
+Both step decorators accept `auto_flow` and `track`. `track=False` runs the function as the
+plain Airflow equivalent (`@task.virtualenv`, `@task.kubernetes`): no step run, no flow
+wiring, and lamindb is not added to `requirements`. All of them accept `lamindb_instance`,
+the instance slug to connect to (default: the worker's instance if lamindb happens to be
+set up there, else `LAMIN_CURRENT_INSTANCE`). The virtualenv variants accept
 `lamindb_version`: `lamindb==<version>` is added to `requirements` unless you list
 lamindb yourself (default: the worker's version if installed, else the latest). The
 remote side must speak the instance's schema version.
 
-The remote variants reuse Airflow's mechanism of shipping the function's source text and
+The decorators reuse Airflow's mechanism of shipping the function's source text and
 append a small wrapper that connects to the instance, binds the step to the flow run and
 records the outcome. Nothing is pickled by reference, and the remote environment only
-needs `lamindb`. Their step runs reference the Airflow task instance log URL
+needs `lamindb`. Step runs reference the Airflow task instance log URL
 (`reference_type="airflow_task_instance"`).
 
 ### Notes
@@ -278,7 +269,7 @@ Integration and system tests run against a real lamindb instance:
 # use a throwaway instance: keep ~/.lamin away from your real settings
 export HOME=/tmp/lamin-home
 lamin init --storage /tmp/lamin-home/store --name airflowtest
-LAMINDB_INTEGRATION_TEST=1 pytest tests/integration   # operators against a real instance
+LAMINDB_INTEGRATION_TEST=1 pytest tests/integration   # shipped sources against a real instance
 
 export AIRFLOW_HOME=/tmp/airflow-e2e AIRFLOW__CORE__LOAD_EXAMPLES=False
 export AIRFLOW__CORE__DAGS_FOLDER=$PWD/tests/system/lamindb

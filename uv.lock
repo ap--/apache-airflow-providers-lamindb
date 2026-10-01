@@ -2401,13 +2401,11 @@ dependencies = [
 cncf-kubernetes = [
     { name = "apache-airflow-providers-cncf-kubernetes" },
 ]
-lamindb = [
-    { name = "lamindb" },
-]
 
 [package.dev-dependencies]
 dev = [
-    { name = "lamindb-airflow", extra = ["cncf-kubernetes", "lamindb"] },
+    { name = "lamindb" },
+    { name = "lamindb-airflow", extra = ["cncf-kubernetes"] },
     { name = "mypy" },
     { name = "pytest" },
     { name = "pytest-asyncio" },
@@ -2422,13 +2420,13 @@ requires-dist = [
     { name = "apache-airflow-providers-cncf-kubernetes", marker = "extra == 'cncf-kubernetes'" },
     { name = "apache-airflow-providers-standard" },
     { name = "httpx", specifier = ">=0.27.0" },
-    { name = "lamindb", marker = "extra == 'lamindb'" },
 ]
-provides-extras = ["lamindb", "cncf-kubernetes"]
+provides-extras = ["cncf-kubernetes"]
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "lamindb-airflow", extras = ["lamindb", "cncf-kubernetes"] },
+    { name = "lamindb" },
+    { name = "lamindb-airflow", extras = ["cncf-kubernetes"] },
     { name = "mypy", specifier = ">=1.15" },
     { name = "pytest", specifier = ">=8.3" },
     { name = "pytest-asyncio", specifier = ">=0.25" },

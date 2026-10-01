@@ -40,17 +40,16 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-# Only the in-process operators need lamindb on the worker; the venv/k8s variants install it remotely.
-"lamindb" = [
-    "lamindb",
-]
+# lamindb is never needed on the worker: the virtualenv/pod operators install it remotely.
 "cncf.kubernetes" = [
     "apache-airflow-providers-cncf-kubernetes",
 ]
 
 [dependency-groups]
 dev = [
-    "lamindb-airflow[lamindb,cncf.kubernetes]",
+    "lamindb-airflow[cncf.kubernetes]",
+    # integration and system tests run lamindb against a throwaway instance
+    "lamindb",
     "mypy>=1.15",
     "pytest>=8.3",
     "pytest-asyncio>=0.25",
